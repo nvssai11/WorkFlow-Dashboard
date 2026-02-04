@@ -20,6 +20,30 @@ class GitHubService:
 
         return response.json().get("access_token")
 
+    def get_user(self, access_token: str):
+        """Get authenticated user information"""
+        url = "https://api.github.com/user"
+        headers = {
+            "Authorization": f"token {access_token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        return response.json()
+
+    def list_repositories(self, access_token: str):
+        """List repositories for authenticated user"""
+        url = "https://api.github.com/user/repos"
+        headers = {
+            "Authorization": f"token {access_token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        return response.json()
+
     def trigger_workflow(
         self,
         access_token: str,
