@@ -12,5 +12,4 @@ def get_me(authorization: str = Header(...)):
 @router.get("/repos")
 def get_repos(authorization: str = Header(...)):
     token = authorization.replace("Bearer ", "").strip()
-    return github_service.list_repositories(token)
-
+    return github_service.get_simplified_repos(token)

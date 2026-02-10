@@ -1,5 +1,6 @@
 import requests
 from backend.config import settings
+from backend.utils.helpers import extract_repo_data
 
 
 class GitHubService:
@@ -43,6 +44,13 @@ class GitHubService:
         response = requests.get(url, headers=headers)
         response.raise_for_status()
         return response.json()
+
+    def get_simplified_repos(self, access_token: str):
+        """
+        Returns simplified repository data for frontend consumption.
+        """
+        repos = self.list_repositories(access_token)
+        return extract_repo_data(repos)
 
     def trigger_workflow(
         self,
