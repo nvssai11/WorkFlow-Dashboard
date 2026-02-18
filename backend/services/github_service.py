@@ -1,7 +1,8 @@
 import requests
+import logging
 from backend.config import settings
 from backend.utils.helpers import extract_repo_data
-
+from backend.utils.github_client import get_repo_languages
 
 class GitHubService:
     """Handles all GitHub API interactions"""
@@ -15,35 +16,43 @@ class GitHubService:
             "code": code,
             "redirect_uri": settings.GITHUB_REDIRECT_URI,
         }
-
-        response = requests.post(url, headers=headers, data=payload)
-        response.raise_for_status()
-
-        return response.json().get("access_token")
+        try:
+            response = requests.post(url, headers=headers, data=payload)
+            response.raise_for_status()
+            return response.json().get("access_token")
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Error exchanging code for token: {e}")
+            raise
 
     def get_user(self, access_token: str):
         """Get authenticated user information"""
-        url = "https://api.github.com/user"
+        url = f"{settings.GITHUB_API_BASE}/user"
         headers = {
             "Authorization": f"token {access_token}",
             "Accept": "application/vnd.github.v3+json",
         }
-
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Error fetching user info: {e}")
+            raise
 
     def list_repositories(self, access_token: str):
         """List repositories for authenticated user"""
-        url = "https://api.github.com/user/repos"
+        url = f"{settings.GITHUB_API_BASE}/user/repos"
         headers = {
             "Authorization": f"token {access_token}",
             "Accept": "application/vnd.github.v3+json",
         }
-
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Error listing repositories: {e}")
+            raise
 
     def get_simplified_repos(self, access_token: str):
         """
@@ -51,6 +60,19 @@ class GitHubService:
         """
         repos = self.list_repositories(access_token)
         return extract_repo_data(repos)
+
+    def get_repo_languages(self, owner: str, repo: str, token: str):
+        """
+        Returns the programming languages for a specific repository.
+        """
+        if not owner or not repo or not token:
+            logging.error("Missing owner, repo, or token for language retrieval.")
+            raise ValueError("Owner, repo, and token must be provided.")
+        try:
+            return get_repo_languages(owner, repo, token)
+        except Exception as e:
+            logging.error(f"Error fetching repo languages: {e}")
+            raise
 
     def trigger_workflow(
         self,
@@ -60,12 +82,16 @@ class GitHubService:
         workflow_id: str,
         branch: str,
     ):
-        url = f"https://api.github.com/repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches"
+        url = f"{settings.GITHUB_API_BASE}/repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches"
         headers = {
             "Authorization": f"token {access_token}",
             "Accept": "application/vnd.github.v3+json",
         }
         payload = {"ref": branch}
-
-        response = requests.post(url, json=payload, headers=headers)
-        return response.status_code, response.text
+        try:
+            response = requests.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+            return response.status_code, response.text
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Error triggering workflow: {e}")
+            raise
