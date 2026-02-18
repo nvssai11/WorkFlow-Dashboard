@@ -1,8 +1,37 @@
+"use client";
 import { Github, Hexagon } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { useEffect } from "react";
 
 export default function LoginPage() {
+        useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const accessToken = params.get("access_token");
+        if (accessToken) {
+            localStorage.setItem("access_token", accessToken);
+            window.location.href = "/dashboard";
+            return;
+        }
+        const code = params.get("code");
+        if (code) {
+            fetch(`http://localhost:8000/oauth/token?code=${code}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.access_token) {
+                        localStorage.setItem("access_token", data.access_token);
+                        window.location.href = "/dashboard";
+                    } else {
+                        // Optionally handle missing access_token
+                        window.location.href = "/error";
+                    }
+                })
+                .catch(err => {
+                    console.error("Error exchanging code for token:", err);
+                    window.location.href = "/error";
+                });
+        }
+    }, []);
     return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4">
             <div className="w-full max-w-md space-y-8">

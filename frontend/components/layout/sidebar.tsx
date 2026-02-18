@@ -11,7 +11,8 @@ import {
     Settings,
     ChevronLeft,
     ChevronRight,
-    Hexagon
+    Hexagon,
+    FolderGit2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -19,6 +20,7 @@ import { useState } from "react";
 const navItems = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { name: "Workflows", href: "/workflows", icon: GitBranch },
+    { name: "Repositories", href: "/repositories", icon:FolderGit2  },
     { name: "Runs", href: "/runs", icon: Play },
     { name: "Logs", href: "/logs", icon: ScrollText },
     { name: "Agents", href: "/agents", icon: Bot },
