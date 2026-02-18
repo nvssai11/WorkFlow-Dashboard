@@ -1,90 +1,123 @@
+// "use client";
+
+// import { FolderGit2 } from "lucide-react";
+
+// interface RepositoryCardProps {
+//   name: string;
+//   owner: string;
+//   visibility: "public" | "private";
+//   description: string;
+//   lastUpdated: string;
+// }
+
+// export function RepositoryCard({
+//   name,
+//   owner,
+//   visibility,
+//   description,
+//   lastUpdated,
+// }: RepositoryCardProps) {
+//   return (
+//     <div className="rounded-lg border bg-card p-5 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer">
+//       <div className="flex items-center justify-between mb-2">
+//         <div className="flex items-center gap-2">
+//           <FolderGit2 size={18} className="text-muted-foreground" />
+//           <h2 className="font-medium">{name}</h2>
+//         </div>
+
+//         <span
+//           className={`text-xs px-2 py-0.5 rounded-full ${
+//             visibility === "private"
+//               ? "bg-red-100 text-red-600"
+//               : "bg-green-100 text-green-600"
+//           }`}
+//         >
+//           {visibility}
+//         </span>
+//       </div>
+
+//       <p className="text-sm text-muted-foreground mb-3">{owner}</p>
+
+//       <p className="text-sm line-clamp-2 mb-4">{description}</p>
+
+//       <div className="text-xs text-muted-foreground">
+//         Updated {lastUpdated}
+//       </div>
+//     </div>
+//   );
+// }
+
 "use client";
 
 import Link from "next/link";
 import { FolderGit2 } from "lucide-react";
-import { Owner } from "@/types/repository";
 
-interface Props {
+interface Owner {
+  login: string;
+  name?: string | null;
+  email?: string | null;
+  avatar_url?: string | null;
+  html_url?: string;
+}
+
+interface RepositoryCardProps {
   id: number;
   name: string;
   owner: Owner;
   visibility: "public" | "private";
   description: string;
+  lastUpdated: string;
 }
 
-export default function RepositoryCard({
+export function RepositoryCard({
   id,
   name,
   owner,
   visibility,
   description,
-}: Props) {
+  lastUpdated,
+}: RepositoryCardProps) {
   return (
-    <div
-      className="group bg-white dark:bg-zinc-900 
-                 border border-primary/40 
-                 rounded-2xl shadow-sm hover:shadow-2xl 
-                 transition-all duration-300 
-                 hover:-translate-y-1 
-                 hover:border-primary
-                 flex flex-col overflow-hidden"
-    >
-
-      {/* Content */}
-      <Link href={`/repositories/${id}`} className="flex-1 p-6">
-        <div className="flex items-center justify-between mb-5">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-zinc-100 dark:bg-zinc-800">
-              <FolderGit2 size={18} className="text-zinc-600 dark:text-zinc-300" />
-            </div>
-            <h2 className="font-semibold text-lg text-zinc-900 dark:text-white">
-              {name}
-            </h2>
+    <Link href={`/repositories/${id}`}>
+      <div className="rounded-lg border bg-card p-5 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <FolderGit2 size={18} className="text-muted-foreground" />
+            <h2 className="font-medium">{name}</h2>
           </div>
 
           <span
-            className={`text-xs font-medium px-3 py-1 rounded-full ${
+            className={`text-xs px-2 py-0.5 rounded-full ${
               visibility === "private"
-                ? "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400"
-                : "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400"
+                ? "bg-red-100 text-red-600"
+                : "bg-green-100 text-green-600"
             }`}
           >
             {visibility}
           </span>
         </div>
 
-        <div className="flex items-center gap-3 mb-4">
-          {owner.avatar_url ? (
+        <div className="flex items-center gap-2 mb-3">
+          {owner.avatar_url && (
             <img
               src={owner.avatar_url}
               alt={owner.login}
-              className="w-8 h-8 rounded-full ring-2 ring-zinc-200 dark:ring-zinc-700"
+              className="w-6 h-6 rounded-full"
             />
-          ) : (
-            <div className="w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-700" />
           )}
-
-          <span className="text-sm text-zinc-600 dark:text-zinc-400">
+          <span className="text-sm text-muted-foreground">
             {owner.login}
+            {owner.name ? ` (${owner.name})` : ""}
           </span>
         </div>
 
-        <p className="text-sm text-zinc-600 dark:text-zinc-400 line-clamp-2">
-          {description}
-        </p>
-      </Link>
+        <p className="text-sm line-clamp-2 mb-4">{description}</p>
 
-      {/* Footer Button */}
-      <Link href={`/repositories/${id}`}>
-        <div className="flex items-center justify-center gap-2 
-                        bg-primary text-primary-foreground 
-                        px-4 py-4 
-                        text-sm font-medium 
-                        hover:bg-primary/90 
-                        transition-colors">
-          Select Repository
+        <div className="text-xs text-muted-foreground">
+          Updated {lastUpdated}
         </div>
-      </Link>
-    </div>
+      </div>
+    </Link>
   );
 }
+export default RepositoryCard;
