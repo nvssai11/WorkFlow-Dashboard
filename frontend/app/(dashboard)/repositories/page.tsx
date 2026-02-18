@@ -1,128 +1,33 @@
-// import { Plus } from "lucide-react";
-// import { RepositoryCard } from "@/components/repositories/repository-card";
-
-// // Mock repositories data
-// const repositories = [
-//   {
-//     id: 1,
-//     name: "jigsaw-puzzle-phoenix",
-//     owner: "aadya28",
-//     visibility: "public" as const,
-//     description: "A multiplayer Jigsaw Puzzle Game",
-//     lastUpdated: "2m ago",
-//   },
-//   {
-//     id: 2,
-//     name: "BizzAI",
-//     owner: "nvssai11",
-//     visibility: "private" as const,
-//     description: "Open-source POS and inventory management system",
-//     lastUpdated: "10m ago",
-//   },
-//   {
-//     id: 3,
-//     name: "DevOps-Automation",
-//     owner: "team-alpha",
-//     visibility: "public" as const,
-//     description: "CI/CD pipeline automation workflows",
-//     lastUpdated: "1h ago",
-//   },
-//   {
-//     id: 4,
-//     name: "AI-Analytics",
-//     owner: "data-team",
-//     visibility: "private" as const,
-//     description: "Machine learning analytics platform",
-//     lastUpdated: "3h ago",
-//   },
-// ];
-
-// export default function RepositoriesPage() {
-//   return (
-//     <div className="space-y-6">
-//       {/* Header */}
-//       <div className="flex items-center justify-between">
-//         <div>
-//           <h1 className="text-2xl font-semibold tracking-tight">
-//             Repositories
-//           </h1>
-//           <p className="text-muted-foreground">
-//             Select and manage your connected repositories
-//           </p>
-//         </div>
-
-//         <button className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-md hover:bg-primary/90 transition-colors text-sm font-medium">
-//           <Plus size={16} />
-//           Connect Repository
-//         </button>
-//       </div>
-
-//       {/* Grid */}
-//       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-//         {repositories.map((repo) => (
-//   <RepositoryCard
-//     key={repo.id}
-//     id={repo.id}
-//     name={repo.name}
-//     owner={repo.owner}
-//     visibility={repo.visibility}
-//     description={repo.description}
-//     lastUpdated={repo.lastUpdated}
-//   />
-// ))}
-
-//       </div>
-//     </div>
-//   );
-// }
-
 "use client";
 
 import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
 import { RepositoryCard } from "@/components/repositories/repository-card";
+import { api } from "@/lib/api";
 
-interface BackendRepo {
+interface Repo {
   id: number;
   name: string;
-  owner: string;
-  description: string;
+  full_name: string;
+  owner: { login: string; avatar_url?: string } | string;
+  description: string | null;
   private: boolean;
   html_url: string;
-  clone_url: string;
 }
 
 export default function RepositoriesPage() {
-  const [repositories, setRepositories] = useState<BackendRepo[]>([]);
+  const [repositories, setRepositories] = useState<Repo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchRepos = async () => {
       try {
-        const token = localStorage.getItem("access_token");
-        if (!token) {
-          setError("No access token found");
-          setLoading(false);
-          return;
-        }
-        const response = await fetch(
-          "http://localhost:8000/github/repos",
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-        if (!response.ok) {
-          throw new Error("Failed to fetch repositories");
-        }
-
-        const data = await response.json();
+        const { data } = await api.get<Repo[]>("/github/repos");
         setRepositories(data);
       } catch (err: any) {
-        console.error(err);
-        setError("Could not load repositories");
+        console.error("Failed to fetch repos:", err);
+        setError("Could not load repositories. Please try again.");
       } finally {
         setLoading(false);
       }
@@ -131,40 +36,42 @@ export default function RepositoriesPage() {
     fetchRepos();
   }, []);
 
+  const handleConnect = () => {
+    // Logic to connect a new repo or refresh
+    window.location.reload();
+  };
+
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Repositories
-          </h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Repositories</h1>
           <p className="text-muted-foreground">
             Select and manage your connected repositories
           </p>
         </div>
 
-        <button className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-md hover:bg-primary/90 transition-colors text-sm font-medium">
+        <button
+          onClick={handleConnect}
+          className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-md hover:bg-primary/90 transition-colors text-sm font-medium"
+        >
           <Plus size={16} />
-          Connect Repository
+          Refresh
         </button>
       </div>
 
-      {/* Loading State */}
       {loading && (
-        <p className="text-muted-foreground">
-          Loading repositories...
-        </p>
+        <div className="flex justify-center p-8">
+          <p className="text-muted-foreground">Loading repositories...</p>
+        </div>
       )}
 
-      {/* Error State */}
       {error && (
-        <p className="text-red-500 text-sm">
+        <div className="p-4 border border-destructive/50 rounded-md bg-destructive/10 text-destructive text-sm">
           {error}
-        </p>
+        </div>
       )}
 
-      {/* Data Grid */}
       {!loading && !error && (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {repositories.map((repo) => (
@@ -172,12 +79,21 @@ export default function RepositoriesPage() {
               key={repo.id}
               id={repo.id}
               name={repo.name}
-              owner={typeof repo.owner === "object" && repo.owner !== null ? repo.owner : { login: repo.owner }}
+              owner={
+                typeof repo.owner === "string"
+                  ? { login: repo.owner }
+                  : { ...repo.owner, name: repo.owner.login }
+              }
               visibility={repo.private ? "private" : "public"}
-              description={repo.description}
+              description={repo.description || "No description"}
               lastUpdated="Recently"
             />
           ))}
+          {repositories.length === 0 && (
+            <div className="col-span-full text-center text-muted-foreground py-10">
+              No repositories found.
+            </div>
+          )}
         </div>
       )}
     </div>

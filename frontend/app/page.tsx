@@ -1,37 +1,25 @@
 "use client";
-import { Github, Hexagon } from "lucide-react";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
+
 import { useEffect } from "react";
+import Link from "next/link";
+import { Github, Hexagon } from "lucide-react";
+import { API_BASE_URL } from "@/lib/api";
 
 export default function LoginPage() {
-        useEffect(() => {
+    useEffect(() => {
+        // Handle OAuth callback
         const params = new URLSearchParams(window.location.search);
         const accessToken = params.get("access_token");
+
+        // If backend returns access_token in URL (from valid OAuth flow)
         if (accessToken) {
             localStorage.setItem("access_token", accessToken);
+            // Clean URL and redirect
+            window.history.replaceState({}, document.title, window.location.pathname);
             window.location.href = "/dashboard";
-            return;
-        }
-        const code = params.get("code");
-        if (code) {
-            fetch(`http://localhost:8000/oauth/token?code=${code}`)
-                .then(res => res.json())
-                .then(data => {
-                    if (data.access_token) {
-                        localStorage.setItem("access_token", data.access_token);
-                        window.location.href = "/dashboard";
-                    } else {
-                        // Optionally handle missing access_token
-                        window.location.href = "/error";
-                    }
-                })
-                .catch(err => {
-                    console.error("Error exchanging code for token:", err);
-                    window.location.href = "/error";
-                });
         }
     }, []);
+
     return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4">
             <div className="w-full max-w-md space-y-8">
@@ -48,8 +36,7 @@ export default function LoginPage() {
                 <div className="bg-card border text-card-foreground rounded-xl p-8 shadow-sm space-y-6">
                     <div className="flex flex-col gap-4">
                         <Link
-                            href="http://localhost:8000/oauth/connect"
-                            target="_blank"
+                            href={`${API_BASE_URL}/oauth/connect`}
                             className="h-12 text-base font-medium relative overflow-hidden group inline-flex items-center justify-center whitespace-nowrap rounded-md ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground w-full"
                         >
                             <Github className="mr-2 h-5 w-5" />
