@@ -253,7 +253,7 @@ export default function RepositoryDetailsPage() {
       {/* ── Header ── */}
       <div className="flex items-center gap-3">
         <Link
-          href="/repositories"
+          href="/workflows"
           className="p-2 hover:bg-muted rounded-full transition-colors"
         >
           <ArrowLeft size={20} />
@@ -263,8 +263,8 @@ export default function RepositoryDetailsPage() {
             {repo.name}
             <span
               className={`text-xs px-2 py-0.5 rounded-full border ${repo.private
-                  ? "bg-red-100 text-red-600 border-red-200"
-                  : "bg-green-100 text-green-600 border-green-200"
+                ? "bg-red-100 text-red-600 border-red-200"
+                : "bg-green-100 text-green-600 border-green-200"
                 }`}
             >
               {repo.private ? (

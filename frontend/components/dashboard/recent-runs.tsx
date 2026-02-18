@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { recentRuns } from "@/data/mock-dashboard";
 import { cn } from "@/lib/utils";
 import { CheckCircle2, XCircle, Loader2, Clock, GitCommit } from "lucide-react";
@@ -33,6 +34,7 @@ export function RecentRunsTable() {
                             <th className="px-6 py-3">Branch</th>
                             <th className="px-6 py-3">Duration</th>
                             <th className="px-6 py-3 text-right">Time</th>
+                            <th className="px-6 py-3 text-right">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -59,6 +61,11 @@ export function RecentRunsTable() {
                                     </td>
                                     <td className="px-6 py-4 text-muted-foreground">{run.duration}</td>
                                     <td className="px-6 py-4 text-right text-muted-foreground">{run.timestamp}</td>
+                                    <td className="px-6 py-4 text-right">
+                                        <Link href="/logs" className="inline-flex items-center justify-center rounded-md text-xs font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-8 px-3">
+                                            Logs
+                                        </Link>
+                                    </td>
                                 </tr>
                             );
                         })}

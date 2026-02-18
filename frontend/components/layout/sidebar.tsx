@@ -19,10 +19,7 @@ import { useState } from "react";
 
 const navItems = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-    { name: "Repositories", href: "/repositories", icon: FolderGit2 },
     { name: "Workflows", href: "/workflows", icon: GitBranch },
-    { name: "Runs", href: "/runs", icon: Play },
-    { name: "Logs", href: "/logs", icon: ScrollText },
     { name: "Agents", href: "/agents", icon: Bot },
     { name: "Settings", href: "/settings", icon: Settings },
 ];

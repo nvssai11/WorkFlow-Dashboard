@@ -78,7 +78,7 @@ export function RepositoryCard({
   lastUpdated,
 }: RepositoryCardProps) {
   return (
-    <Link href={`/repositories/${id}`}>
+    <Link href={`/workflows/${id}`}>
       <div className="rounded-lg border bg-card p-5 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
@@ -87,11 +87,10 @@ export function RepositoryCard({
           </div>
 
           <span
-            className={`text-xs px-2 py-0.5 rounded-full ${
-              visibility === "private"
+            className={`text-xs px-2 py-0.5 rounded-full ${visibility === "private"
                 ? "bg-red-100 text-red-600"
                 : "bg-green-100 text-green-600"
-            }`}
+              }`}
           >
             {visibility}
           </span>
