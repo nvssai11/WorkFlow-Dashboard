@@ -82,7 +82,7 @@ export default function RepositoryCard({
                         text-sm font-medium 
                         hover:bg-primary/90 
                         transition-colors">
-          View Details →
+          Select Repository
         </div>
       </Link>
     </div>

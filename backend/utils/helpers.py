@@ -29,10 +29,19 @@ def extract_repo_data(repos):
             "id": repo["id"],
             "name": repo["name"],
             "full_name": repo["full_name"],
-            "owner": repo["owner"]["login"],
+            "owner": {
+                "login": repo["owner"]["login"],
+                "id": repo["owner"].get("id"),
+                "avatar_url": repo["owner"].get("avatar_url"),
+                "html_url": repo["owner"].get("html_url"),
+                "name": repo["owner"].get("name"),  # Will be None if not present
+                "email": repo["owner"].get("email"),  # Will be None if not present
+            },
             "html_url": repo["html_url"],
             "description": repo.get("description", ""),
+            "language": repo.get("language"),
             "private": repo["private"],
+            "fork": repo.get("fork"),
             "clone_url": repo["clone_url"]
         }
         for repo in repos

@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends
 from fastapi.responses import RedirectResponse
-
 from backend.config import settings
 from backend.dependencies import get_github_service
 from backend.models.schemas import OAuthTokenResponse
@@ -21,10 +20,14 @@ def github_connect():
     )
     return RedirectResponse(github_oauth_url)
 
-@router.get("/callback", response_model=OAuthTokenResponse)
+from fastapi.responses import RedirectResponse
+
+@router.get("/callback")
 def github_callback(
     code: str,
     github_service: GitHubService = Depends(get_github_service),
 ):
     token = github_service.exchange_code_for_token(code)
-    return {"access_token": token}
+    # Redirect to frontend with token in URL
+    frontend_url = f"http://localhost:3000/?access_token={token}"
+    return RedirectResponse(frontend_url)
