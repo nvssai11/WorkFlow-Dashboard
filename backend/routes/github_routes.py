@@ -24,6 +24,16 @@ def get_repos(token: str = Depends(get_current_user_token)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/repos/{repo_id}", response_model=RepoSchema)
+def get_repo(repo_id: int, token: str = Depends(get_current_user_token)):
+    """
+    Returns simplified repository data for a single repository.
+    """
+    try:
+        return github_service.get_simplified_repo(repo_id, token)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/repo-languages")
 def get_repo_languages_route(
     owner: str = Query(...),

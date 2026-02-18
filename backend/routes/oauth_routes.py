@@ -20,7 +20,7 @@ def github_connect():
     )
     return RedirectResponse(github_oauth_url)
 
-from fastapi.responses import RedirectResponse
+
 
 @router.get("/callback")
 def github_callback(

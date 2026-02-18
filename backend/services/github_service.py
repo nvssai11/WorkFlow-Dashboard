@@ -54,12 +54,36 @@ class GitHubService:
             logging.error(f"Error listing repositories: {e}")
             raise
 
+    def get_repository(self, access_token: str, repo_id: int):
+        """Get a single repository by ID"""
+        url = f"https://api.github.com/repositories/{repo_id}"
+        headers = {
+            "Authorization": f"token {access_token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Error fetching repository {repo_id}: {e}")
+            raise
+
     def get_simplified_repos(self, access_token: str):
         """
         Returns simplified repository data for frontend consumption.
         """
         repos = self.list_repositories(access_token)
         return extract_repo_data(repos)
+
+    def get_simplified_repo(self, repo_id: int, access_token: str):
+        """
+        Returns simplified repository data for a single repository.
+        """
+        repo = self.get_repository(access_token, repo_id)
+        # extract_repo_data expects a list, so we wrap the single repo in a list
+        # and then return the first element
+        return extract_repo_data([repo])[0]
 
     def get_repo_languages(self, owner: str, repo: str, token: str):
         """
