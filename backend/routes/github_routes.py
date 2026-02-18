@@ -47,3 +47,25 @@ def get_repo_languages_route(
         return github_service.get_repo_languages(owner, repo, token)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/repo-contents")
+def get_repo_contents_route(
+    owner: str = Query(...),
+    repo: str = Query(...),
+    path: str = Query(default=""),
+    token: str = Depends(get_current_user_token),
+):
+    """Returns the contents (files/dirs) of a repository path."""
+    from backend.utils.github_client import get_repo_contents
+    try:
+        contents = get_repo_contents(owner, repo, token, path)
+        if contents is None:
+            return []
+        if isinstance(contents, list):
+            return [
+                {"name": item["name"], "type": item["type"], "path": item["path"], "size": item.get("size", 0)}
+                for item in contents
+            ]
+        return contents
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

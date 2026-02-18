@@ -2,7 +2,11 @@ import requests
 import logging
 from backend.config import settings
 from backend.utils.helpers import extract_repo_data
-from backend.utils.github_client import get_repo_languages
+from backend.utils.github_client import (
+    get_repo_languages,
+    get_repo_contents,
+    create_or_update_file,
+)
 
 class GitHubService:
     """Handles all GitHub API interactions"""

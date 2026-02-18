@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from backend.routes import oauth_routes, workflow_routes, github_routes
+from backend.routes import oauth_routes, workflow_routes, github_routes, pipeline_routes
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
@@ -17,3 +17,4 @@ app.add_middleware(
 app.include_router(oauth_routes.router, prefix="/oauth", tags=["OAuth"])
 app.include_router(workflow_routes.router, prefix="/workflow", tags=["Workflow"])
 app.include_router(github_routes.router, prefix="/github", tags=["GitHub"])
+app.include_router(pipeline_routes.router, prefix="/pipeline", tags=["Pipeline"])

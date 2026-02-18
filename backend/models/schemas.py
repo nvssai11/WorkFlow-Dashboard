@@ -46,3 +46,21 @@ class RepoSchema(BaseModel):
     language: Optional[str]
     fork: Optional[bool]
     owner: UserSchema
+
+
+class PipelineSuggestRequest(BaseModel):
+    owner: str
+    repo: str
+
+
+class PipelineGenerateRequest(BaseModel):
+    owner: str
+    repo: str
+    steps: list[str]
+
+
+class PipelineCommitRequest(BaseModel):
+    owner: str
+    repo: str
+    type: str
+    yaml: str
