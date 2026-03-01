@@ -118,24 +118,54 @@ def _cd_steps(stack_info: dict) -> list:
             "run": "az aks get-credentials --resource-group ${{ secrets.AKS_RESOURCE_GROUP }} --name ${{ secrets.AKS_CLUSTER_NAME }} --overwrite-existing",
         },
     ])
-    # Deploy: only apply files that exist; rollout only deployments that exist
-    k8s_files = ["k8s/namespace.yaml"]
+    # Apply namespace first, create ACR pull secret (no Owner/role-assignment needed), then apply deployments
+    steps.append({
+        "name": "Apply namespace",
+        "run": "kubectl apply -f k8s/namespace.yaml",
+    })
+    steps.append({
+        "name": "Create ACR pull secret",
+        "run": "kubectl create secret docker-registry acr-pull-secret --docker-server=${{ secrets.ACR_LOGIN_SERVER }} --docker-username=${{ secrets.ACR_USERNAME }} --docker-password=${{ secrets.ACR_PASSWORD }} -n workflow-dashboard --dry-run=client -o yaml | kubectl apply -f -",
+    })
+    deploy_files = []
     if has_backend:
-        k8s_files.append("k8s/backend-deployment.yaml")
+        deploy_files.append("k8s/backend-deployment.yaml")
     if has_frontend:
-        k8s_files.append("k8s/frontend-deployment.yaml")
+        deploy_files.append("k8s/frontend-deployment.yaml")
+    if deploy_files:
+        apply_deploy_run = (
+            'ACR="${{ secrets.ACR_LOGIN_SERVER }}"; for f in '
+            + " ".join(deploy_files)
+            + "; do sed \"s|ACR_REGISTRY|${ACR}|g\" \"$f\" | kubectl apply -f -; done"
+        )
+        steps.append({"name": "Apply deployments", "run": apply_deploy_run})
+    # Diagnose: show pods and events so we can see ImagePullBackOff / CrashLoopBackOff / termination issues
+    diagnose_parts = [
+        "echo '--- Pods ---'",
+        "kubectl get pods -n workflow-dashboard -o wide",
+        "echo '--- Deployment status ---'",
+    ]
+    if has_backend:
+        diagnose_parts.append("kubectl describe deployment workflow-backend -n workflow-dashboard | tail -80")
+    if has_frontend:
+        diagnose_parts.append("kubectl describe deployment workflow-frontend -n workflow-dashboard | tail -80")
+    diagnose_parts.extend([
+        "echo '--- Recent events (root cause of pending/back-off) ---'",
+        "kubectl get events -n workflow-dashboard --sort-by='.lastTimestamp' | tail -40",
+    ])
+    steps.append({
+        "name": "Diagnose deployment (pods and events)",
+        "run": " ; ".join(diagnose_parts),
+    })
     rollout_parts = []
     if has_backend:
         rollout_parts.append("kubectl rollout status deployment/workflow-backend -n workflow-dashboard --timeout=600s")
     if has_frontend:
         rollout_parts.append("kubectl rollout status deployment/workflow-frontend -n workflow-dashboard --timeout=600s")
-    deploy_run = (
-        'ACR="${{ secrets.ACR_LOGIN_SERVER }}"; for f in '
-        + " ".join(k8s_files)
-        + "; do sed \"s|ACR_REGISTRY|${ACR}|g\" \"$f\" | kubectl apply -f -; done; "
-        + "; ".join(rollout_parts)
-    )
-    steps.append({"name": "Deploy to AKS", "run": deploy_run})
+    steps.append({
+        "name": "Wait for rollout",
+        "run": " ; ".join(rollout_parts),
+    })
     steps.append({"name": "Show services", "run": "kubectl get svc -n workflow-dashboard"})
     steps.append({
         "name": "Print public IP",

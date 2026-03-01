@@ -87,6 +87,8 @@ metadata:
 spec:
   replicas: 1
   progressDeadlineSeconds: 900
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: workflow-backend
@@ -95,6 +97,9 @@ spec:
       labels:
         app: workflow-backend
     spec:
+      terminationGracePeriodSeconds: 30
+      imagePullSecrets:
+        - name: acr-pull-secret
       containers:
         - name: backend
           image: ACR_REGISTRY/workflow-backend:latest
@@ -163,6 +168,8 @@ metadata:
 spec:
   replicas: 1
   progressDeadlineSeconds: 900
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: workflow-frontend
@@ -171,6 +178,9 @@ spec:
       labels:
         app: workflow-frontend
     spec:
+      terminationGracePeriodSeconds: 30
+      imagePullSecrets:
+        - name: acr-pull-secret
       containers:
         - name: frontend
           image: ACR_REGISTRY/workflow-frontend:latest
