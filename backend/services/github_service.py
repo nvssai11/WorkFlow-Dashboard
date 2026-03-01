@@ -44,19 +44,31 @@ class GitHubService:
             raise
 
     def list_repositories(self, access_token: str):
-        """List repositories for authenticated user"""
-        url = f"{settings.GITHUB_API_BASE}/user/repos"
+        """List all repositories for authenticated user (handles GitHub pagination)."""
+        url = f"{settings.GITHUB_API_BASE}/user/repos?per_page=100"
         headers = {
             "Authorization": f"token {access_token}",
             "Accept": "application/vnd.github.v3+json",
         }
+        all_repos = []
         try:
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
-            return response.json()
+            while url:
+                response = requests.get(url, headers=headers)
+                response.raise_for_status()
+                page_repos = response.json()
+                all_repos.extend(page_repos)
+                # Follow pagination: get next page URL from Link header
+                link_header = response.headers.get("Link")
+                url = None
+                if link_header:
+                    for part in link_header.split(","):
+                        if 'rel="next"' in part:
+                            url = part.split(";")[0].strip(" <>")
+                            break
         except requests.exceptions.RequestException as e:
             logging.error(f"Error listing repositories: {e}")
             raise
+        return all_repos
 
     def get_repository(self, access_token: str, repo_id: int):
         """Get a single repository by ID"""
