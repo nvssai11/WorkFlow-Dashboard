@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict
 
 class OAuthTokenResponse(BaseModel):
     access_token: str
@@ -64,3 +64,25 @@ class PipelineCommitRequest(BaseModel):
     repo: str
     type: str
     yaml: str
+
+
+class PipelineSyncSecretsRequest(BaseModel):
+    owner: str
+    repo: str
+    secrets: Dict[str, str]  # secret_name -> plain value
+
+
+class PipelineGenerateAIRequest(BaseModel):
+    owner: str
+    repo: str
+    deployment_config: Optional[Dict[str, str]] = None  # ACR_LOGIN_SERVER, AKS_RESOURCE_GROUP, AKS_CLUSTER_NAME, etc.
+
+
+class PipelineSetupRepoRequest(BaseModel):
+    owner: str
+    repo: str
+    secrets: Dict[str, str]  # for GitHub Actions secrets (ACR, AKS, etc.)
+    steps: Optional[list[str]] = None  # CI steps; default from suggest if omitted
+    use_stored_azure: bool = False  # if True, merge stored AZURE_CREDENTIALS into secrets
+    use_ai: bool = False  # if True, generate workflow YAML via LLM instead of template
+    use_simple_cd: bool = False  # if True, use minimal CD: single app, inline Dockerfile, secrets ACR_NAME, RESOURCE_GROUP, AKS_CLUSTER
