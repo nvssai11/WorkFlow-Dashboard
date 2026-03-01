@@ -19,9 +19,9 @@ import {
   Container,
   Download,
   CheckCircle2,
-  Clock,
 } from "lucide-react";
 import Link from "next/link";
+import { Cloud } from "lucide-react";
 
 /* ───── Types ───── */
 
@@ -51,6 +51,10 @@ interface StackInfo {
   dependency_file: string | null;
   detected_files: string[];
   has_test_script: boolean;
+  has_backend?: boolean;
+  has_frontend?: boolean;
+  backend_layout?: string | null;
+  frontend_layout?: string | null;
 }
 
 /* ───── Language color map ───── */
@@ -116,6 +120,83 @@ export default function RepositoryDetailsPage() {
   const [yamlPreview, setYamlPreview] = useState<string | null>(null);
   const [commitResult, setCommitResult] = useState<string | null>(null);
 
+  // One-click automation: secrets form and setup
+  const [secrets, setSecrets] = useState<Record<string, string>>({
+    AZURE_CREDENTIALS: "",
+    ACR_LOGIN_SERVER: "",
+    ACR_USERNAME: "",
+    ACR_PASSWORD: "",
+    AKS_RESOURCE_GROUP: "",
+    AKS_CLUSTER_NAME: "",
+    BACKEND_PUBLIC_URL: "",
+  });
+  const [setupLoading, setSetupLoading] = useState(false);
+  const [setupResult, setSetupResult] = useState<string | null>(null);
+  const [syncSecretsLoading, setSyncSecretsLoading] = useState(false);
+  const [azureConnected, setAzureConnected] = useState<boolean | null>(null);
+  const [subscriptions, setSubscriptions] = useState<{ id: string; name: string }[]>([]);
+  const [regions, setRegions] = useState<string[]>([]);
+  const [vmSizes, setVmSizes] = useState<string[]>([]);
+  const [createForm, setCreateForm] = useState({
+    subscription_id: "",
+    region: "eastus",
+    resource_group: "workflow-dashboard-rg",
+    acr_name: "workflowdashboardacr",
+    aks_name: "workflow-dashboard-aks",
+    node_count: 1,
+    node_vm_size: "standard_dc2s_v3",
+    enable_monitoring: false,
+  });
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createdResult, setCreatedResult] = useState<Record<string, string> | null>(null);
+  const [showAdvancedSecrets, setShowAdvancedSecrets] = useState(false);
+  const [useSimpleCd, setUseSimpleCd] = useState(false); // simple CD = single app, inline Dockerfile; off by default, enable on demand
+
+  useEffect(() => {
+    api.get<{ connected: boolean }>("/azure/status")
+      .then(({ data }) => {
+        setAzureConnected(data.connected);
+        if (data.connected) {
+          Promise.all([
+            api.get<{ subscriptions: { id: string; name: string }[] }>("/azure/subscriptions"),
+            api.get<{ regions: string[] }>("/azure/regions"),
+            api.get<{ vm_sizes: string[] }>("/azure/vm-sizes", { params: { region: "eastus" } }),
+          ]).then(([subs, regs, vms]) => {
+            const subList = subs.data.subscriptions || [];
+            const rList = regs.data.regions || [];
+            const vList = vms.data.vm_sizes || [];
+            setSubscriptions(subList);
+            setRegions(rList);
+            setVmSizes(vList);
+            setCreateForm((f) => ({
+              ...f,
+              subscription_id: subList[0]?.id || f.subscription_id,
+              region: rList.includes(f.region) ? f.region : rList[0] || f.region,
+              node_vm_size: vList.includes(f.node_vm_size) ? f.node_vm_size : (vList[0] || "standard_dc2s_v3"),
+            }));
+          }).catch(() => {});
+        }
+      })
+      .catch(() => setAzureConnected(false));
+  }, []);
+
+  /* Refetch VM sizes when region changes (so list matches subscription + region) */
+  useEffect(() => {
+    if (!azureConnected || !createForm.region) return;
+    api.get<{ vm_sizes: string[] }>("/azure/vm-sizes", { params: { region: createForm.region } })
+      .then(({ data }) => {
+        const vList = data.vm_sizes || [];
+        if (vList.length) {
+          setVmSizes(vList);
+          setCreateForm((f) => ({
+            ...f,
+            node_vm_size: vList.includes(f.node_vm_size) ? f.node_vm_size : (vList[0] || "standard_dc2s_v3"),
+          }));
+        }
+      })
+      .catch(() => {});
+  }, [azureConnected, createForm.region]);
+
   /* ── Fetch repo details ── */
   useEffect(() => {
     if (!id) return;
@@ -127,8 +208,8 @@ export default function RepositoryDetailsPage() {
         const ownerLogin =
           typeof data.owner === "string" ? data.owner : data.owner.login;
 
-        // Fetch languages and files in parallel
-        const [langResp, filesResp] = await Promise.all([
+        // Fetch languages, files, and saved deployment in parallel
+        const [langResp, filesResp, deploymentResp] = await Promise.all([
           api
             .get("/github/repo-languages", {
               params: { owner: ownerLogin, repo: data.name },
@@ -139,10 +220,35 @@ export default function RepositoryDetailsPage() {
               params: { owner: ownerLogin, repo: data.name, path: "" },
             })
             .catch(() => ({ data: [] })),
+          api
+            .get<{ deployment: Record<string, string> | null }>("/azure/deployment", {
+              params: { owner: ownerLogin, repo: data.name },
+            })
+            .catch(() => ({ data: { deployment: null } })),
         ]);
 
         setLanguages(langResp.data);
         setFiles(filesResp.data);
+
+        const saved = deploymentResp.data?.deployment;
+        if (saved) {
+          setCreatedResult(saved);
+          setSecrets((s) => ({
+            ...s,
+            ACR_LOGIN_SERVER: saved.acr_login_server || s.ACR_LOGIN_SERVER,
+            ACR_USERNAME: saved.acr_username || s.ACR_USERNAME,
+            ACR_PASSWORD: saved.acr_password || s.ACR_PASSWORD,
+            AKS_RESOURCE_GROUP: saved.resource_group || s.AKS_RESOURCE_GROUP,
+            AKS_CLUSTER_NAME: saved.aks_name || s.AKS_CLUSTER_NAME,
+          }));
+          setCreateForm((f) => ({
+            ...f,
+            region: saved.region || f.region,
+            resource_group: saved.resource_group || f.resource_group,
+            acr_name: saved.acr_name || f.acr_name,
+            aks_name: saved.aks_name || f.aks_name,
+          }));
+        }
       } catch {
         setError("Could not load repository details.");
       } finally {
@@ -176,8 +282,8 @@ export default function RepositoryDetailsPage() {
     }
   };
 
-  /* ── Pipeline: Generate preview ── */
-  const handleGenerate = async () => {
+  /* ── Pipeline: Generate preview (template) ── */
+  const handleGenerateTemplate = async () => {
     if (!repo) return;
     setGenerating(true);
     try {
@@ -192,6 +298,35 @@ export default function RepositoryDetailsPage() {
       setYamlPreview(data.yaml);
     } catch {
       alert("Failed to generate pipeline.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  /* ── Pipeline: Generate with AI (repo + deployment config) ── */
+  const deploymentConfig = {
+    ACR_LOGIN_SERVER: secrets.ACR_LOGIN_SERVER?.trim() || createdResult?.acr_login_server,
+    AKS_RESOURCE_GROUP: secrets.AKS_RESOURCE_GROUP?.trim() || createdResult?.resource_group,
+    AKS_CLUSTER_NAME: secrets.AKS_CLUSTER_NAME?.trim() || createdResult?.aks_name,
+  };
+  const deploymentConfigured =
+    !!(createdResult || (secrets.ACR_LOGIN_SERVER?.trim() && secrets.AKS_RESOURCE_GROUP?.trim() && secrets.AKS_CLUSTER_NAME?.trim()));
+
+  const handleGenerateAI = async () => {
+    if (!repo) return;
+    setGenerating(true);
+    setYamlPreview(null);
+    try {
+      const ownerLogin =
+        typeof repo.owner === "string" ? repo.owner : repo.owner.login;
+      const { data } = await api.post("/pipeline/generate-ai", {
+        owner: ownerLogin,
+        repo: repo.name,
+        deployment_config: deploymentConfig,
+      });
+      setYamlPreview(data.yaml);
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "AI generation failed.");
     } finally {
       setGenerating(false);
     }
@@ -216,6 +351,124 @@ export default function RepositoryDetailsPage() {
       alert("Failed to commit pipeline.");
     } finally {
       setCommitting(false);
+    }
+  };
+
+  /* ── One-click setup: sync secrets + generate Dockerfiles, k8s, workflow ── */
+  const handleCreateResources = async () => {
+    if (!createForm.region || !repo) return;
+    setCreateLoading(true);
+    setCreatedResult(null);
+    const ownerLogin = typeof repo.owner === "string" ? repo.owner : repo.owner.login;
+    try {
+      const { data } = await api.post("/azure/create-resources", {
+        ...createForm,
+        repo_owner: ownerLogin,
+        repo_name: repo.name,
+      });
+      setCreatedResult(data);
+      setSecrets((s) => ({
+        ...s,
+        ACR_LOGIN_SERVER: data.acr_login_server || s.ACR_LOGIN_SERVER,
+        ACR_USERNAME: data.acr_username || s.ACR_USERNAME,
+        ACR_PASSWORD: data.acr_password || s.ACR_PASSWORD,
+        AKS_RESOURCE_GROUP: data.resource_group || s.AKS_RESOURCE_GROUP,
+        AKS_CLUSTER_NAME: data.aks_name || s.AKS_CLUSTER_NAME,
+      }));
+    } catch (err: any) {
+      const res = err.response?.data;
+      const allowed = res?.allowed_sizes;
+      const suggested = res?.suggested_sizes;
+      if (Array.isArray(allowed) && allowed.length) {
+        setVmSizes(allowed);
+        setCreateForm((f) => ({ ...f, node_vm_size: allowed[0] }));
+        alert(
+          "VM size not allowed in this subscription/region. Node size has been set to " +
+            allowed[0] +
+            ". Click Create resources again."
+        );
+      } else if (Array.isArray(suggested) && suggested.length) {
+        const suggestedRegions = res?.suggested_regions;
+        if (Array.isArray(suggestedRegions) && suggestedRegions.length) {
+          setCreateForm((f) => ({
+            ...f,
+            region: suggestedRegions[0],
+            node_vm_size: suggested[0],
+          }));
+          alert(
+            "Insufficient vCPU quota in this region. Switched to region " +
+              suggestedRegions[0] +
+              " (quota is per region). Click Create resources again."
+          );
+        } else {
+          setCreateForm((f) => ({ ...f, node_vm_size: suggested[0] }));
+          alert(
+            "Insufficient vCPU quota. Node size set to " +
+              suggested[0] +
+              ". Click Create resources again, or try a different region."
+          );
+        }
+      } else {
+        alert(res?.detail || "Create failed.");
+      }
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
+  const handleSetupFullCicd = async () => {
+    if (!repo) return;
+    const ownerLogin = typeof repo.owner === "string" ? repo.owner : repo.owner.login;
+    const secretsPayload: Record<string, string> = {};
+    for (const [k, v] of Object.entries(secrets)) {
+      if (v && String(v).trim()) secretsPayload[k] = String(v).trim();
+    }
+    setSetupLoading(true);
+    setSetupResult(null);
+    try {
+      const { data } = await api.post("/pipeline/setup-repo", {
+        owner: ownerLogin,
+        repo: repo.name,
+        secrets: secretsPayload,
+        steps: null,
+        use_stored_azure: true,
+        use_ai: !useSimpleCd,
+        use_simple_cd: useSimpleCd,
+      });
+      setSetupResult(data.message || "Setup complete.");
+    } catch (err: any) {
+      setSetupResult(null);
+      alert(err.response?.data?.detail || "Setup failed.");
+    } finally {
+      setSetupLoading(false);
+    }
+  };
+
+  const handleSyncSecretsOnly = async () => {
+    if (!repo) return;
+    const ownerLogin = typeof repo.owner === "string" ? repo.owner : repo.owner.login;
+    const secretsPayload: Record<string, string> = {};
+    for (const [k, v] of Object.entries(secrets)) {
+      if (v && String(v).trim()) secretsPayload[k] = String(v).trim();
+    }
+    if (Object.keys(secretsPayload).length === 0) {
+      alert("Enter at least one secret to sync.");
+      return;
+    }
+    setSyncSecretsLoading(true);
+    setSetupResult(null);
+    try {
+      const { data } = await api.post("/pipeline/sync-secrets", {
+        owner: ownerLogin,
+        repo: repo.name,
+        secrets: secretsPayload,
+      });
+      setSetupResult(data.message || "Secrets synced.");
+    } catch (err: any) {
+      setSetupResult(null);
+      alert(err.response?.data?.detail || "Failed to sync secrets.");
+    } finally {
+      setSyncSecretsLoading(false);
     }
   };
 
@@ -379,134 +632,284 @@ export default function RepositoryDetailsPage() {
           </section>
         </div>
 
-        {/* ====== RIGHT: Workflow Automation ====== */}
+        {/* ====== RIGHT: Workflow Automation (order: Deploy → CI → CD → Actions) ====== */}
         <div className="space-y-4">
-          {/* ── CI Pipeline ── */}
-          <section className="rounded-lg border bg-card p-5 space-y-4">
-            <div className="flex items-center justify-between">
+          {/* ── 1) Deployment config (first) ── */}
+          <section className="rounded-lg border bg-card p-5 space-y-5">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-2">
+              <Cloud size={14} /> Deployment config
+            </h2>
+            {azureConnected === false && (
+              <p className="text-sm text-muted-foreground">
+                <Link href="/settings" className="text-primary underline">Connect Azure in Settings</Link> once, then create resources and enable CI/CD from here.
+              </p>
+            )}
+            {azureConnected === true && (
+              <>
+                <div className="space-y-4">
+                  <p className="text-sm text-muted-foreground">Create AKS + ACR (or use existing). Defaults can be changed.</p>
+                  <p className="text-xs text-muted-foreground">Node sizes are limited to 2 or 4 vCPU. If quota is exceeded, try another region (e.g. eastus2).</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                    <label className="space-y-1 block">
+                      <span className="text-muted-foreground">Subscription</span>
+                      <select
+                        value={createForm.subscription_id}
+                        onChange={(e) => setCreateForm((f) => ({ ...f, subscription_id: e.target.value }))}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
+                      >
+                        {subscriptions.map((s) => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="space-y-1 block">
+                      <span className="text-muted-foreground">Region</span>
+                      <select
+                        value={createForm.region}
+                        onChange={(e) => setCreateForm((f) => ({ ...f, region: e.target.value }))}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
+                      >
+                        {regions.map((r) => (
+                          <option key={r} value={r}>{r}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="space-y-1 block">
+                      <span className="text-muted-foreground">Resource group</span>
+                      <input
+                        type="text"
+                        value={createForm.resource_group}
+                        onChange={(e) => setCreateForm((f) => ({ ...f, resource_group: e.target.value }))}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
+                      />
+                    </label>
+                    <label className="space-y-1 block">
+                      <span className="text-muted-foreground">ACR name</span>
+                      <input
+                        type="text"
+                        value={createForm.acr_name}
+                        onChange={(e) => setCreateForm((f) => ({ ...f, acr_name: e.target.value }))}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
+                      />
+                    </label>
+                    <label className="space-y-1 block">
+                      <span className="text-muted-foreground">AKS name</span>
+                      <input
+                        type="text"
+                        value={createForm.aks_name}
+                        onChange={(e) => setCreateForm((f) => ({ ...f, aks_name: e.target.value }))}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
+                      />
+                    </label>
+                    <label className="space-y-1 block">
+                      <span className="text-muted-foreground">Node size (2 or 4 vCPU only)</span>
+                      <select
+                        value={createForm.node_vm_size}
+                        onChange={(e) => setCreateForm((f) => ({ ...f, node_vm_size: e.target.value }))}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
+                      >
+                        {vmSizes.map((v) => (
+                          <option key={v} value={v}>{v}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="space-y-1 block">
+                      <span className="text-muted-foreground">Node count</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={createForm.node_count}
+                        onChange={(e) => setCreateForm((f) => ({ ...f, node_count: parseInt(e.target.value, 10) || 1 }))}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
+                      />
+                    </label>
+                    <label className="flex items-center gap-2 text-sm col-span-2">
+                      <input
+                        type="checkbox"
+                        checked={createForm.enable_monitoring}
+                        onChange={(e) => setCreateForm((f) => ({ ...f, enable_monitoring: e.target.checked }))}
+                        className="rounded"
+                      />
+                      <span className="text-muted-foreground">Enable monitoring (Log Analytics) — requires subscription to be registered for Microsoft.OperationsManagement</span>
+                    </label>
+                  </div>
+                  <button
+                    onClick={handleCreateResources}
+                    disabled={createLoading}
+                    className="flex items-center gap-2 px-4 py-2 border rounded-md text-sm font-medium hover:bg-muted disabled:opacity-50"
+                  >
+                    {createLoading ? <Loader2 size={14} className="animate-spin" /> : null}
+                    Create resources
+                  </button>
+                  {createdResult && (
+                    <div className="space-y-2">
+                      <p className="text-sm text-green-600 flex items-center gap-1">
+                        <Check size={14} /> Resources ready for this repo. Proceed to CI/CD below, or change settings and create again to update.
+                      </p>
+                      {(createdResult.aks_fqdn || createdResult.aks_api_ip) && (
+                        <div className="text-xs rounded-md border bg-muted/40 p-3 space-y-1">
+                          <p className="font-medium text-muted-foreground">AKS — access & test</p>
+                          {createdResult.aks_api_ip && (
+                            <p><span className="text-muted-foreground">Public IP (API):</span> <code className="bg-background px-1 rounded">{createdResult.aks_api_ip}</code></p>
+                          )}
+                          {createdResult.aks_fqdn && (
+                            <p><span className="text-muted-foreground">Kubernetes API:</span> <code className="bg-background px-1 rounded break-all">https://{createdResult.aks_fqdn}</code></p>
+                          )}
+                          <p className="text-muted-foreground mt-1">Use: az aks get-credentials --resource-group {createdResult.resource_group} --name {createdResult.aks_name} — then kubectl. App URL (LoadBalancer) appears after first deploy.</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedSecrets(!showAdvancedSecrets)}
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    {showAdvancedSecrets ? "Hide" : "Show"} manual secrets / sync only
+                  </button>
+                  {showAdvancedSecrets && (
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                      <input type="text" placeholder="ACR_LOGIN_SERVER" value={secrets.ACR_LOGIN_SERVER} onChange={(e) => setSecrets((s) => ({ ...s, ACR_LOGIN_SERVER: e.target.value }))} className="rounded-md border border-input px-2 py-1.5 text-xs" />
+                      <input type="text" placeholder="ACR_USERNAME" value={secrets.ACR_USERNAME} onChange={(e) => setSecrets((s) => ({ ...s, ACR_USERNAME: e.target.value }))} className="rounded-md border border-input px-2 py-1.5 text-xs" />
+                      <input type="password" placeholder="ACR_PASSWORD" value={secrets.ACR_PASSWORD} onChange={(e) => setSecrets((s) => ({ ...s, ACR_PASSWORD: e.target.value }))} className="rounded-md border border-input px-2 py-1.5 text-xs" />
+                      <input type="text" placeholder="AKS_RESOURCE_GROUP" value={secrets.AKS_RESOURCE_GROUP} onChange={(e) => setSecrets((s) => ({ ...s, AKS_RESOURCE_GROUP: e.target.value }))} className="rounded-md border border-input px-2 py-1.5 text-xs" />
+                      <input type="text" placeholder="AKS_CLUSTER_NAME" value={secrets.AKS_CLUSTER_NAME} onChange={(e) => setSecrets((s) => ({ ...s, AKS_CLUSTER_NAME: e.target.value }))} className="rounded-md border border-input px-2 py-1.5 text-xs" />
+                      <button type="button" onClick={handleSyncSecretsOnly} disabled={syncSecretsLoading} className="text-xs border rounded px-2 py-1.5 hover:bg-muted">Sync secrets only</button>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </section>
+
+          {/* ── 2) CI Pipeline (after deployment configured) ── */}
+          {deploymentConfigured && (
+            <section className="rounded-lg border bg-card p-5 space-y-4">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-2">
                 <Play size={14} /> CI Pipeline
               </h2>
-              {commitResult && (
-                <span className="text-xs text-green-600 flex items-center gap-1">
-                  <Check size={12} /> {commitResult}
-                </span>
-              )}
-            </div>
-
-            {/* Not analyzed yet */}
-            {!stack && (
-              <div className="text-center py-6 space-y-3">
-                <Cpu size={28} className="mx-auto text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">
-                  Analyze your repository to detect its tech stack and generate a CI pipeline.
-                </p>
-                <button
-                  onClick={handleAnalyze}
-                  disabled={analyzing}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
-                >
-                  {analyzing ? (
-                    <>
-                      <Loader2 size={14} className="animate-spin" /> Analyzing...
-                    </>
-                  ) : (
-                    <>
-                      <Cpu size={14} /> Analyze Repository
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
-
-            {/* Stack analyzed */}
-            {stack && (
-              <div className="space-y-4">
-                {/* Stack info */}
-                <div className="grid grid-cols-3 gap-3 text-xs">
-                  <div className="rounded-md border p-3 text-center">
-                    <p className="text-muted-foreground mb-1">Language</p>
-                    <p className="font-medium capitalize">{stack.language}</p>
-                  </div>
-                  <div className="rounded-md border p-3 text-center">
-                    <p className="text-muted-foreground mb-1">Framework</p>
-                    <p className="font-medium capitalize">{stack.framework}</p>
-                  </div>
-                  <div className="rounded-md border p-3 text-center">
-                    <p className="text-muted-foreground mb-1">Docker</p>
-                    <p className="font-medium">
-                      {stack.has_dockerfile ? "Detected" : "None"}
-                    </p>
-                  </div>
+              {!stack && (
+                <div className="text-center py-4 space-y-3">
+                  <p className="text-sm text-muted-foreground">Analyze the repo to detect tech stack and pipeline steps.</p>
+                  <button
+                    onClick={handleAnalyze}
+                    disabled={analyzing}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+                  >
+                    {analyzing ? <><Loader2 size={14} className="animate-spin" /> Analyzing...</> : <><Cpu size={14} /> Analyze repository</>}
+                  </button>
                 </div>
-
-                {/* Steps toggles */}
-                <div>
-                  <p className="text-xs font-medium mb-2 text-muted-foreground">
-                    Pipeline Steps
-                  </p>
+              )}
+              {stack && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-3 gap-3 text-xs">
+                    <div className="rounded-md border p-3 text-center">
+                      <p className="text-muted-foreground mb-1">Language</p>
+                      <p className="font-medium capitalize">{stack.language}</p>
+                    </div>
+                    <div className="rounded-md border p-3 text-center">
+                      <p className="text-muted-foreground mb-1">Framework</p>
+                      <p className="font-medium capitalize">{stack.framework}</p>
+                    </div>
+                    <div className="rounded-md border p-3 text-center">
+                      <p className="text-muted-foreground mb-1">Backend / Frontend</p>
+                      <p className="font-medium">{stack.has_backend ? "Backend" : ""}{stack.has_backend && stack.has_frontend ? " + " : ""}{stack.has_frontend ? "Frontend" : ""}</p>
+                    </div>
+                  </div>
+                  <p className="text-xs font-medium text-muted-foreground">Pipeline steps</p>
                   <div className="space-y-2">
                     {suggestedSteps.map((step) => (
-                      <label
-                        key={step}
-                        className="flex items-center gap-3 p-2.5 rounded-md border cursor-pointer hover:bg-muted/50 transition-colors text-sm"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={enabledSteps[step] ?? false}
-                          onChange={() =>
-                            setEnabledSteps((prev) => ({
-                              ...prev,
-                              [step]: !prev[step],
-                            }))
-                          }
-                          className="rounded"
-                        />
-                        <span className="shrink-0">
-                          {STEP_ICONS[step] || <Play size={16} />}
-                        </span>
+                      <label key={step} className="flex items-center gap-3 p-2.5 rounded-md border cursor-pointer hover:bg-muted/50 transition-colors text-sm">
+                        <input type="checkbox" checked={enabledSteps[step] ?? false} onChange={() => setEnabledSteps((prev) => ({ ...prev, [step]: !prev[step] }))} className="rounded" />
+                        <span className="shrink-0">{STEP_ICONS[step] || <Play size={16} />}</span>
                         <span>{STEP_LABELS[step] || step}</span>
                       </label>
                     ))}
                   </div>
                 </div>
+              )}
+            </section>
+          )}
 
-                {/* Generate button */}
-                <button
-                  onClick={handleGenerate}
-                  disabled={
-                    generating ||
-                    !suggestedSteps.some((s) => enabledSteps[s])
-                  }
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
-                >
-                  {generating ? (
-                    <>
-                      <Loader2 size={14} className="animate-spin" /> Generating...
-                    </>
-                  ) : (
-                    <>
-                      <FileCode size={14} /> Generate CI Pipeline
-                    </>
-                  )}
-                </button>
+          {/* ── 3) CD Pipeline (after deployment configured) ── */}
+          {deploymentConfigured && (
+            <section className="rounded-lg border bg-card p-5 space-y-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-2">
+                <Container size={14} /> CD Pipeline
+              </h2>
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  On push to <code className="text-xs bg-muted px-1 rounded">main</code>, the workflow builds images, pushes to ACR, and deploys to AKS.
+                </p>
+                {(createdResult || deploymentConfig.ACR_LOGIN_SERVER) && (
+                  <div className="text-xs text-muted-foreground space-y-1 rounded-md border p-3 bg-muted/30">
+                    <p><strong>ACR:</strong> {createdResult?.acr_login_server || deploymentConfig.ACR_LOGIN_SERVER || "—"}</p>
+                    <p><strong>AKS:</strong> {createdResult?.aks_name || deploymentConfig.AKS_CLUSTER_NAME || "—"} ({createdResult?.resource_group || deploymentConfig.AKS_RESOURCE_GROUP || "—"})</p>
+                    {(createdResult?.aks_api_ip || createdResult?.aks_fqdn) && (
+                      <p><strong>AKS API / Public IP:</strong> {createdResult.aks_api_ip || "—"} {createdResult.aks_fqdn && <span className="break-all">(https://{createdResult.aks_fqdn})</span>}</p>
+                    )}
+                  </div>
+                )}
               </div>
-            )}
-          </section>
+            </section>
+          )}
 
-          {/* ── CD Pipeline (placeholder) ── */}
-          <section className="rounded-lg border bg-card p-5">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-2 mb-3">
-              <Container size={14} /> CD Pipeline
-            </h2>
-            <div className="text-center py-8 space-y-2">
-              <Clock size={28} className="mx-auto text-muted-foreground/40" />
-              <p className="text-sm text-muted-foreground">Coming Soon</p>
-              <p className="text-xs text-muted-foreground/60">
-                Continuous Deployment pipeline automation will be available in a future update.
+          {/* ── 4) Main action buttons (at end) ── */}
+          {deploymentConfigured && (
+            <section className="rounded-lg border bg-card p-5 space-y-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Automate CI/CD</h2>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={useSimpleCd}
+                  onChange={(e) => setUseSimpleCd(e.target.checked)}
+                  className="rounded"
+                />
+                <span>Simple CD (single app, default Node Dockerfile, minimal secrets)</span>
+              </label>
+              {commitResult && (
+                <p className="text-sm text-green-600 flex items-center gap-1"><Check size={14} /> {commitResult}</p>
+              )}
+              {setupResult && (
+                <p className="text-sm text-green-600 flex items-center gap-1"><Check size={14} /> {setupResult}</p>
+              )}
+              <div className="flex flex-wrap gap-3">
+                <button
+                  onClick={handleGenerateAI}
+                  disabled={generating}
+                  className="flex items-center gap-2 px-4 py-2.5 border rounded-md text-sm font-medium hover:bg-muted disabled:opacity-50"
+                >
+                  {generating ? <Loader2 size={16} className="animate-spin" /> : <FileCode size={16} />}
+                  Generate CI/CD
+                </button>
+                <button
+                  onClick={handleSetupFullCicd}
+                  disabled={setupLoading || syncSecretsLoading}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {setupLoading ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                  Enable CI/CD
+                </button>
+                {repo?.html_url && (
+                  <a
+                    href={`${repo.html_url.replace(/\/$/, "")}/actions`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-4 py-2.5 border rounded-md text-sm font-medium hover:bg-muted transition-colors"
+                  >
+                    <Play size={16} /> View workflow runs
+                  </a>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {useSimpleCd
+                  ? "Simple CD: one workflow file, 4 secrets (AZURE_CREDENTIALS, ACR_NAME, RESOURCE_GROUP, AKS_CLUSTER). Uncheck for full CI/CD with Dockerfiles and k8s."
+                  : "Generate CI/CD: preview workflow then commit. Enable CI/CD: sync secrets, add Dockerfiles & k8s, and push workflow."}
               </p>
-            </div>
-          </section>
+            </section>
+          )}
         </div>
       </div>
 
@@ -517,7 +920,7 @@ export default function RepositoryDetailsPage() {
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b">
               <h3 className="font-semibold flex items-center gap-2">
-                <FileCode size={18} /> Preview CI Pipeline
+                <FileCode size={18} /> Preview CI/CD Pipeline
               </h3>
               <button
                 onClick={() => setYamlPreview(null)}
