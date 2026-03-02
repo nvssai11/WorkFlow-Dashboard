@@ -135,3 +135,19 @@ class GitHubService:
         except requests.exceptions.RequestException as e:
             logging.error(f"Error triggering workflow: {e}")
             raise
+
+    def list_workflow_runs(self, access_token: str, owner: str, repo: str, per_page: int = 10):
+        """List workflow runs for a repository."""
+        url = f"{settings.GITHUB_API_BASE}/repos/{owner}/{repo}/actions/runs?per_page={per_page}"
+        headers = {
+            "Authorization": f"token {access_token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            payload = response.json()
+            return payload.get("workflow_runs", []) if isinstance(payload, dict) else []
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Error fetching workflow runs for {owner}/{repo}: {e}")
+            raise
