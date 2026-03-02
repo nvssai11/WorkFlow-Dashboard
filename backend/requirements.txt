@@ -4,3 +4,11 @@ requests
 python-dotenv
 pydantic
 pyyaml
+PyNaCl
+azure-identity
+azure-mgmt-resource
+azure-mgmt-containerregistry
+azure-mgmt-containerservice
+azure-mgmt-compute
+azure-mgmt-monitor
+azure-mgmt-loganalytics
