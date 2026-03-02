@@ -37,6 +37,37 @@ def _get_connection() -> sqlite3.Connection:
     )
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS tracked_repositories (
+            github_login TEXT NOT NULL,
+            repo_owner TEXT NOT NULL,
+            repo_name TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (github_login, repo_owner, repo_name)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS workflow_runs (
+            github_login TEXT NOT NULL,
+            run_id INTEGER NOT NULL,
+            repo_owner TEXT NOT NULL,
+            repo_name TEXT NOT NULL,
+            workflow_name TEXT NOT NULL,
+            trigger TEXT NOT NULL,
+            status TEXT NOT NULL,
+            branch TEXT NOT NULL,
+            commit_hash TEXT NOT NULL,
+            duration_seconds INTEGER NOT NULL DEFAULT 0,
+            run_started_at TEXT NOT NULL,
+            html_url TEXT,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (github_login, run_id)
+        )
+        """
+    )
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS deployment_cache (
             github_login TEXT NOT NULL,
             repo_owner TEXT NOT NULL,
@@ -57,6 +88,147 @@ def _get_connection() -> sqlite3.Connection:
     )
     conn.commit()
     return conn
+
+
+def upsert_tracked_repository(github_login: str, repo_owner: str, repo_name: str) -> None:
+    """Track repositories to sync workflow runs efficiently."""
+    conn = _get_connection()
+    try:
+        now = datetime.datetime.utcnow().isoformat() + "Z"
+        conn.execute(
+            """
+            INSERT INTO tracked_repositories (github_login, repo_owner, repo_name, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(github_login, repo_owner, repo_name) DO UPDATE SET
+                updated_at = excluded.updated_at
+            """,
+            (github_login, repo_owner, repo_name, now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def list_tracked_repositories(github_login: str) -> list[dict[str, str]]:
+    """Return tracked repositories for a user."""
+    conn = _get_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT repo_owner, repo_name
+            FROM tracked_repositories
+            WHERE github_login = ?
+            ORDER BY updated_at DESC
+            """,
+            (github_login,),
+        ).fetchall()
+        return [{"owner": row[0], "repo": row[1]} for row in rows]
+    finally:
+        conn.close()
+
+
+def list_deployment_repositories(github_login: str) -> list[dict[str, str]]:
+    """Return repos with saved deployment config for a user."""
+    conn = _get_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT repo_owner, repo_name
+            FROM deployment_cache
+            WHERE github_login = ?
+            ORDER BY updated_at DESC
+            """,
+            (github_login,),
+        ).fetchall()
+        return [{"owner": row[0], "repo": row[1]} for row in rows]
+    finally:
+        conn.close()
+
+
+def upsert_workflow_runs(github_login: str, runs: list[dict[str, Any]]) -> None:
+    """Insert or update workflow runs for a user."""
+    if not runs:
+        return
+    conn = _get_connection()
+    try:
+        now = datetime.datetime.utcnow().isoformat() + "Z"
+        conn.executemany(
+            """
+            INSERT INTO workflow_runs (
+                github_login, run_id, repo_owner, repo_name, workflow_name, trigger, status,
+                branch, commit_hash, duration_seconds, run_started_at, html_url, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(github_login, run_id) DO UPDATE SET
+                repo_owner = excluded.repo_owner,
+                repo_name = excluded.repo_name,
+                workflow_name = excluded.workflow_name,
+                trigger = excluded.trigger,
+                status = excluded.status,
+                branch = excluded.branch,
+                commit_hash = excluded.commit_hash,
+                duration_seconds = excluded.duration_seconds,
+                run_started_at = excluded.run_started_at,
+                html_url = excluded.html_url,
+                updated_at = excluded.updated_at
+            """,
+            [
+                (
+                    github_login,
+                    int(run["run_id"]),
+                    run["repo_owner"],
+                    run["repo_name"],
+                    run["workflow_name"],
+                    run["trigger"],
+                    run["status"],
+                    run["branch"],
+                    run["commit_hash"],
+                    int(run.get("duration_seconds") or 0),
+                    run["run_started_at"],
+                    run.get("html_url"),
+                    now,
+                )
+                for run in runs
+            ],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def list_recent_workflow_runs(github_login: str, limit: int = 20) -> list[dict[str, Any]]:
+    """Return latest cached workflow runs for a user."""
+    conn = _get_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT
+                run_id, repo_owner, repo_name, workflow_name, trigger, status, branch,
+                commit_hash, duration_seconds, run_started_at, html_url
+            FROM workflow_runs
+            WHERE github_login = ?
+            ORDER BY run_started_at DESC
+            LIMIT ?
+            """,
+            (github_login, max(1, min(limit, 200))),
+        ).fetchall()
+        return [
+            {
+                "run_id": row[0],
+                "repo_owner": row[1],
+                "repo_name": row[2],
+                "workflow_name": row[3],
+                "trigger": row[4],
+                "status": row[5],
+                "branch": row[6],
+                "commit_hash": row[7],
+                "duration_seconds": row[8],
+                "run_started_at": row[9],
+                "html_url": row[10],
+            }
+            for row in rows
+        ]
+    finally:
+        conn.close()
 
 
 def get_azure_credentials(github_login: str) -> Optional[str]:
