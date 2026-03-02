@@ -9,6 +9,8 @@ export interface WorkflowRun {
     timestamp: string;
     branch: string;
     commitHash: string;
+    repo?: string;
+    url?: string;
 }
 
 export interface DashboardStats {
