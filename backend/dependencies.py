@@ -1,5 +1,6 @@
 from backend.services.github_service import GitHubService
 from backend.services.workflow_service import WorkflowService
+from backend.services.workflow_runs_service import WorkflowRunsService
 from fastapi import Header, HTTPException
 
 
@@ -10,6 +11,11 @@ def get_github_service() -> GitHubService:
 def get_workflow_service() -> WorkflowService:
     github_service = GitHubService()
     return WorkflowService(github_service)
+
+
+def get_workflow_runs_service() -> WorkflowRunsService:
+    github_service = GitHubService()
+    return WorkflowRunsService(github_service)
 
 
 def get_current_user_token(authorization: str = Header(...)) -> str:

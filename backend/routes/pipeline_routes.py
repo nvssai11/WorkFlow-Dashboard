@@ -29,6 +29,7 @@ from backend.utils.github_client import (
 from backend.services.github_service import GitHubService
 from backend.services.azure_store import get as get_azure_creds
 from backend.services.pipeline_llm import generate_pipeline_yaml as llm_generate_pipeline
+from backend.db import upsert_tracked_repository
 import base64
 
 router = APIRouter()
@@ -40,6 +41,15 @@ def _github_login(token: str) -> str:
     if not login:
         raise HTTPException(status_code=401, detail="Could not get user from token")
     return login
+
+
+def _track_repo(token: str, owner: str, repo: str) -> None:
+    """Best-effort repo tracking for run sync."""
+    try:
+        login = _github_login(token)
+        upsert_tracked_repository(login, owner, repo)
+    except Exception:
+        pass
 
 
 @router.post("/suggest")
@@ -100,6 +110,7 @@ def commit_pipeline(
     """Commits the approved YAML to the repository."""
     if request.type not in ("ci", "cd"):
         raise HTTPException(status_code=400, detail="Type must be 'ci' or 'cd'.")
+    _track_repo(token, request.owner, request.repo)
 
     file_path = f".github/workflows/{request.type}.yml"
     message = f"Add {request.type.upper()} pipeline (auto-generated)"
@@ -132,6 +143,7 @@ def sync_secrets_to_repo(
     """Push pipeline secrets from the UI to the repo's GitHub Actions secrets. No manual GitHub Settings needed."""
     if not request.secrets:
         return {"status": "success", "message": "No secrets to sync.", "synced": []}
+    _track_repo(token, request.owner, request.repo)
     try:
         pk = get_actions_public_key(request.owner, request.repo, token)
         key_id = pk["key_id"]
@@ -167,6 +179,7 @@ def setup_repo_full_cicd(
     User does not need to go to GitHub or Azure Portal to configure anything.
     """
     owner, repo = request.owner, request.repo
+    _track_repo(token, owner, repo)
     try:
         # Merge stored Azure credentials if requested
         secrets_to_sync = dict(request.secrets) if request.secrets else {}

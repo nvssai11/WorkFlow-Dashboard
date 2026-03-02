@@ -16,6 +16,31 @@ class WorkflowTriggerResponse(BaseModel):
     message: str
 
 
+class DashboardStatsResponse(BaseModel):
+    totalWorkflows: int
+    successfulRuns: int
+    failedRuns: int
+    imagesPushed: int
+
+
+class WorkflowRunItem(BaseModel):
+    id: str
+    workflowName: str
+    trigger: str
+    status: str
+    duration: str
+    timestamp: str
+    branch: str
+    commitHash: str
+    repo: Optional[str] = None
+    url: Optional[str] = None
+
+
+class DashboardRunsResponse(BaseModel):
+    stats: DashboardStatsResponse
+    runs: list[WorkflowRunItem]
+
+
 class UserSchema(BaseModel):
     id: int
     login: str
