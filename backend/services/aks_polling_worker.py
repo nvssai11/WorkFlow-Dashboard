@@ -54,6 +54,7 @@ class AKSFailurePollingWorker:
         self._thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
         self._running = False
+        self._ui_enabled = False  # True only after user clicks Start; False after Stop or backend shutdown
         self._last_seen: dict[str, float] = {}
         self._lock = threading.Lock()
         self._last_poll_at: Optional[str] = None
@@ -73,7 +74,7 @@ class AKSFailurePollingWorker:
         raw_preview_limit = 50
         return {
             "running": self.is_running(),
-            "enabled": bool(settings.AKS_MONITOR_ENABLED),
+            "enabled": self._ui_enabled,
             "pollSeconds": int(max(5, settings.AKS_MONITOR_POLL_SECONDS)),
             "sources": [s.__dict__ for s in parse_sources(settings.AKS_MONITOR_SOURCES)],
             "lastPollAt": self._last_poll_at,
@@ -135,27 +136,27 @@ class AKSFailurePollingWorker:
     def start(self) -> None:
         if self.is_running():
             return
-        if not settings.AKS_MONITOR_ENABLED:
-            logger.info("AKS monitor disabled via AKS_MONITOR_ENABLED=false")
-            return
         sources = parse_sources(settings.AKS_MONITOR_SOURCES)
         if not sources:
-            logger.warning("AKS monitor enabled but AKS_MONITOR_SOURCES is empty")
+            logger.warning("AKS monitor start skipped: AKS_MONITOR_SOURCES is empty (set in .env)")
             return
 
+        self._ui_enabled = True
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, name="aks-failure-poller", daemon=True)
         with self._lock:
             self._running = True
         self._thread.start()
-        logger.info("Started AKS failure polling worker with %s source(s)", len(sources))
+        logger.info("Started AKS failure polling worker with %s source(s) (UI Start)", len(sources))
 
     def stop(self) -> None:
+        self._ui_enabled = False
         self._stop.set()
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=2)
         with self._lock:
             self._running = False
+        logger.info("AKS monitor stopped (UI Stop or backend shutdown)")
 
     def _run(self) -> None:
         poll_seconds = int(max(5, settings.AKS_MONITOR_POLL_SECONDS))
