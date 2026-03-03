@@ -11,6 +11,7 @@ from typing import Optional
 from backend import db as app_db
 from backend.config import settings
 from backend.services.aks_log_monitor import fetch_error_region, reader
+from backend.services.failure_analysis import analyze_failure
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -330,7 +331,7 @@ class AKSFailurePollingWorker:
                     continue
 
                 timestamp = detection.get("timestamp") or (datetime.datetime.utcnow().isoformat() + "Z")
-                app_db.insert_agent_failure(
+                failure_id = app_db.insert_agent_failure(
                     github_login=github_login,
                     workflow=source.workflow,
                     source="aks",
@@ -344,6 +345,13 @@ class AKSFailurePollingWorker:
                     repo_name=source.repo_name,
                 )
                 total_stored += 1
+                root_cause, fix_suggestion = analyze_failure(
+                    str(region["error_line"]), str(region["block"])
+                )
+                if root_cause is not None or fix_suggestion is not None:
+                    app_db.update_agent_failure_analysis(
+                        github_login, failure_id, root_cause, fix_suggestion
+                    )
 
         out = {"detected": total_detected, "stored": total_stored}
         logger.info(
