@@ -9,6 +9,7 @@ from backend import db as app_db
 from backend.dependencies import get_current_user_token
 from backend.services.aks_log_monitor import fetch_error_region, reader
 from backend.services.aks_polling_worker import aks_failure_worker
+from backend.services.failure_analysis import analyze_failure
 from backend.services.github_service import GitHubService
 
 router = APIRouter()
@@ -143,6 +144,13 @@ def poll_and_store_failures(
             log_block=str(region["block"]),
         )
         stored_ids.append(failure_id)
+        root_cause, fix_suggestion = analyze_failure(
+            str(region["error_line"]), str(region["block"])
+        )
+        if root_cause is not None or fix_suggestion is not None:
+            app_db.update_agent_failure_analysis(
+                github_login, failure_id, root_cause, fix_suggestion
+            )
 
     return {
         "workflow": payload.workflow,
