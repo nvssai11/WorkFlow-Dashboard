@@ -105,7 +105,7 @@ export function AgentStatus() {
                         </div>
                     </div>
                     <p className="text-xs text-muted-foreground mt-4">
-                        {status.enabled ? "Enabled in config" : "Disabled in config"} | Poll {status.pollSeconds || "-"}s
+                        {status.enabled ? "Started from UI (click Stop to disable)" : "Stopped — click Start to enable"} | Poll {status.pollSeconds || "-"}s
                     </p>
                 </div>
 
@@ -133,15 +133,27 @@ export function AgentStatus() {
                         <button onClick={() => controlMonitor("stop")} className="rounded-md border px-2.5 py-1.5 text-xs hover:bg-accent">
                             Stop
                         </button>
-                        <button onClick={() => controlMonitor("poll-once")} className="rounded-md border px-2.5 py-1.5 text-xs hover:bg-accent">
+                        <button
+                            onClick={() => controlMonitor("poll-once")}
+                            className="rounded-md border px-2.5 py-1.5 text-xs hover:bg-accent"
+                            title="Fetch AKS logs once, run error detection, and store failures. Does not start the background monitor."
+                        >
                             Poll Once
                         </button>
-                        <button onClick={loadStatus} className="rounded-md border px-2.5 py-1.5 text-xs hover:bg-accent inline-flex items-center gap-1">
+                        <button
+                            onClick={loadStatus}
+                            className="rounded-md border px-2.5 py-1.5 text-xs hover:bg-accent inline-flex items-center gap-1"
+                            title="Reload monitor status (running, last poll, errors) from the server. Does not poll AKS."
+                        >
                             <RefreshCcw size={12} />
                             Refresh
                         </button>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-4 text-emerald-500 flex items-center gap-1">
+                    <p className="text-xs text-muted-foreground mt-3">
+                        <strong>Poll Once:</strong> Run one AKS log poll and detection now (no background loop).{" "}
+                        <strong>Refresh:</strong> Reload this status card from the server.
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-2 text-emerald-500 flex items-center gap-1">
                         <CheckCircle size={12} />
                         {isLoading ? "Refreshing status..." : "Status updates every 10s"}
                     </p>
