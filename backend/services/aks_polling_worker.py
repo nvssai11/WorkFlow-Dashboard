@@ -21,12 +21,15 @@ class AKSLogSource:
     namespace: str
     selector: str
     container: Optional[str] = None
+    repo_owner: Optional[str] = None
+    repo_name: Optional[str] = None
 
 
 def parse_sources(value: str) -> list[AKSLogSource]:
     """
     Parses AKS_MONITOR_SOURCES:
-    workflow|namespace|label_selector|container ; workflow2|namespace2|selector2|
+    workflow|namespace|label_selector|container|repo_owner|repo_name ; ...
+    First 4 parts required; repo_owner and repo_name optional (parts 5 and 6).
     """
     raw_items = [item.strip() for item in value.split(";") if item.strip()]
     sources: list[AKSLogSource] = []
@@ -36,6 +39,8 @@ def parse_sources(value: str) -> list[AKSLogSource]:
             continue
         workflow, namespace, selector = parts[0], parts[1], parts[2]
         container = parts[3] if len(parts) >= 4 and parts[3] else None
+        repo_owner = parts[4] if len(parts) >= 5 and parts[4] else None
+        repo_name = parts[5] if len(parts) >= 6 and parts[5] else None
         if not workflow or not namespace or not selector:
             continue
         sources.append(
@@ -44,6 +49,8 @@ def parse_sources(value: str) -> list[AKSLogSource]:
                 namespace=namespace,
                 selector=selector,
                 container=container,
+                repo_owner=repo_owner,
+                repo_name=repo_name,
             )
         )
     return sources
@@ -333,6 +340,8 @@ class AKSFailurePollingWorker:
                     error_line=str(region["error_line"]),
                     matched_keyword=str(detection.get("matched_keyword") or ""),
                     log_block=str(region["block"]),
+                    repo_owner=source.repo_owner,
+                    repo_name=source.repo_name,
                 )
                 total_stored += 1
 
