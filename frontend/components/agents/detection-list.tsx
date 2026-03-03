@@ -21,6 +21,8 @@ interface FailureItem {
     fixSuggestion?: string | null;
     urgency: "crucial" | "moderate" | "low" | string;
     resolved: boolean;
+    repoOwner?: string | null;
+    repoName?: string | null;
 }
 
 interface RawLogItem {
@@ -50,6 +52,10 @@ function getDisplayFix(item: FailureItem): string {
     return "Check resource limits or retry (dummy)";
 }
 
+interface MonitorStatus {
+    enabled: boolean;
+}
+
 export function DetectionList() {
     const [items, setItems] = useState<FailureItem[]>([]);
     const [search, setSearch] = useState("");
@@ -58,6 +64,7 @@ export function DetectionList() {
     const [error, setError] = useState<string | null>(null);
     const [rawLogs, setRawLogs] = useState<RawLogItem[]>([]);
     const [logsDrawerItem, setLogsDrawerItem] = useState<FailureItem | null>(null);
+    const [monitorEnabled, setMonitorEnabled] = useState<boolean>(false);
 
     const loadItems = useCallback(async () => {
         setIsLoading(true);
@@ -92,11 +99,26 @@ export function DetectionList() {
     }, [loadItems]);
 
     useEffect(() => {
+        const loadMonitorStatus = async () => {
+            try {
+                const res = await api.get<MonitorStatus>("/agents/monitor/status");
+                setMonitorEnabled(Boolean(res.data?.enabled));
+            } catch {
+                setMonitorEnabled(false);
+            }
+        };
+        loadMonitorStatus();
+        const statusInterval = setInterval(loadMonitorStatus, 10000);
+        return () => clearInterval(statusInterval);
+    }, []);
+
+    useEffect(() => {
+        if (!monitorEnabled) return;
         const intervalId = setInterval(() => {
             loadItems();
         }, 10000);
         return () => clearInterval(intervalId);
-    }, [loadItems]);
+    }, [loadItems, monitorEnabled]);
 
     const sortedItems = useMemo(() => {
         return [...items].sort((a, b) => {
@@ -176,6 +198,7 @@ export function DetectionList() {
                             <thead>
                                 <tr className="border-b bg-muted/50">
                                     <th className="text-left font-semibold p-3">Workflow name</th>
+                                    <th className="text-left font-semibold p-3">Repository</th>
                                     <th className="text-left font-semibold p-3">Failure details</th>
                                     <th className="text-left font-semibold p-3">Estimated root cause</th>
                                     <th className="text-left font-semibold p-3">Suggested fix</th>
@@ -193,6 +216,11 @@ export function DetectionList() {
                                         )}
                                     >
                                         <td className="p-3 font-medium">{item.workflow}</td>
+                                        <td className="p-3 text-muted-foreground">
+                                            {item.repoOwner && item.repoName
+                                                ? `${item.repoOwner}/${item.repoName}`
+                                                : "—"}
+                                        </td>
                                         <td className="p-3">
                                             <span className="text-rose-500 inline-flex items-start gap-1">
                                                 <AlertTriangle size={14} className="mt-0.5 shrink-0" />

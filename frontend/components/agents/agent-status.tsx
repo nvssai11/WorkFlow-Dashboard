@@ -127,12 +127,15 @@ export function AgentStatus() {
                         <Zap className="text-primary" size={20} />
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
-                        <button onClick={() => controlMonitor("start")} className="rounded-md border px-2.5 py-1.5 text-xs hover:bg-accent">
-                            Start
-                        </button>
-                        <button onClick={() => controlMonitor("stop")} className="rounded-md border px-2.5 py-1.5 text-xs hover:bg-accent">
-                            Stop
-                        </button>
+                        {status.enabled ? (
+                            <button onClick={() => controlMonitor("stop")} className="rounded-md border px-2.5 py-1.5 text-xs hover:bg-accent">
+                                Stop
+                            </button>
+                        ) : (
+                            <button onClick={() => controlMonitor("start")} className="rounded-md border px-2.5 py-1.5 text-xs hover:bg-accent">
+                                Start
+                            </button>
+                        )}
                         <button
                             onClick={() => controlMonitor("poll-once")}
                             className="rounded-md border px-2.5 py-1.5 text-xs hover:bg-accent"

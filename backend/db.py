@@ -37,6 +37,8 @@ def _ensure_agent_failures_schema(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "agent_failures", "matched_keyword", "TEXT DEFAULT ''")
     _ensure_column(conn, "agent_failures", "log_block", "TEXT")
     _ensure_column(conn, "agent_failures", "root_cause", "TEXT")
+    _ensure_column(conn, "agent_failures", "repo_owner", "TEXT")
+    _ensure_column(conn, "agent_failures", "repo_name", "TEXT")
 
     # Only migrate data if old columns exist (e.g. workflow_name from a previous schema)
     if not _has_column(conn, "agent_failures", "workflow_name"):
@@ -429,6 +431,8 @@ def insert_agent_failure(
     root_cause: Optional[str] = None,
     fix_suggestion: Optional[str] = None,
     urgency: str = "moderate",
+    repo_owner: Optional[str] = None,
+    repo_name: Optional[str] = None,
 ) -> str:
     conn = _get_connection()
     try:
@@ -439,8 +443,8 @@ def insert_agent_failure(
             INSERT INTO agent_failures (
                 id, github_login, workflow, source, pod_name, timestamp, error_line_number,
                 error_line, matched_keyword, log_block, root_cause, fix_suggestion, urgency,
-                resolved, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                repo_owner, repo_name, resolved, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
             """,
             (
                 failure_id,
@@ -456,6 +460,8 @@ def insert_agent_failure(
                 root_cause,
                 fix_suggestion,
                 urgency,
+                repo_owner,
+                repo_name,
                 now,
                 now,
             ),
@@ -500,7 +506,7 @@ def list_agent_failures(
             SELECT
                 id, workflow, source, pod_name, timestamp, error_line_number, error_line,
                 matched_keyword, log_block, root_cause, fix_suggestion, urgency, resolved,
-                created_at, updated_at
+                repo_owner, repo_name, created_at, updated_at
             FROM agent_failures
             WHERE {where_sql}
             ORDER BY resolved ASC, COALESCE(timestamp, created_at) DESC
@@ -524,8 +530,10 @@ def list_agent_failures(
                 "fixSuggestion": row[10],
                 "urgency": row[11],
                 "resolved": bool(row[12]),
-                "createdAt": row[13],
-                "updatedAt": row[14],
+                "repoOwner": row[13],
+                "repoName": row[14],
+                "createdAt": row[15],
+                "updatedAt": row[16],
             }
             for row in rows
         ]

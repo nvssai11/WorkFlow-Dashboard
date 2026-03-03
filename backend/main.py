@@ -23,7 +23,7 @@ app.include_router(github_routes.router, prefix="/github", tags=["GitHub"])
 app.include_router(pipeline_routes.router, prefix="/pipeline", tags=["Pipeline"])
 app.include_router(azure_routes.router, prefix="/azure", tags=["Azure"])
 app.include_router(agents_routes.router, prefix="/agents", tags=["Agents"])
-
+ 
 
 @app.on_event("startup")
 def _startup_agents_monitor() -> None:
