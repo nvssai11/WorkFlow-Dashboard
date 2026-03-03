@@ -145,7 +145,6 @@ export default function RepositoryDetailsPage() {
     aks_name: "workflow-dashboard-aks",
     node_count: 1,
     node_vm_size: "standard_dc2s_v3",
-    enable_monitoring: false,
   });
   const [createLoading, setCreateLoading] = useState(false);
   const [createdResult, setCreatedResult] = useState<Record<string, string> | null>(null);
@@ -726,15 +725,6 @@ export default function RepositoryDetailsPage() {
                         onChange={(e) => setCreateForm((f) => ({ ...f, node_count: parseInt(e.target.value, 10) || 1 }))}
                         className="w-full rounded-md border border-input bg-background px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
                       />
-                    </label>
-                    <label className="flex items-center gap-2 text-sm col-span-2">
-                      <input
-                        type="checkbox"
-                        checked={createForm.enable_monitoring}
-                        onChange={(e) => setCreateForm((f) => ({ ...f, enable_monitoring: e.target.checked }))}
-                        className="rounded"
-                      />
-                      <span className="text-muted-foreground">Enable monitoring (Log Analytics) — requires subscription to be registered for Microsoft.OperationsManagement</span>
                     </label>
                   </div>
                   <button
