@@ -40,16 +40,14 @@ function formatTime(value?: string | null): string {
     return date.toLocaleString();
 }
 
-/** Dummy text until AI root cause is implemented */
 function getDisplayRootCause(item: FailureItem): string {
     if (item.rootCause?.trim()) return item.rootCause;
-    return "Possible timeout or resource constraint (dummy)";
+    return "Pending";
 }
 
-/** Dummy text until AI fix suggestion is implemented */
 function getDisplayFix(item: FailureItem): string {
     if (item.fixSuggestion?.trim()) return item.fixSuggestion;
-    return "Check resource limits or retry (dummy)";
+    return "Pending";
 }
 
 interface MonitorStatus {
