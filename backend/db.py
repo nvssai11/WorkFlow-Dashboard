@@ -26,6 +26,7 @@ def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition
 def _ensure_agent_failures_schema(conn: sqlite3.Connection) -> None:
     """
     Backward-compatible migration for older agent_failures schema.
+    Only run the UPDATE if the table has the old column names (workflow_name, etc.).
     """
     _ensure_column(conn, "agent_failures", "workflow", "TEXT")
     _ensure_column(conn, "agent_failures", "source", "TEXT DEFAULT 'aks'")
@@ -37,6 +38,9 @@ def _ensure_agent_failures_schema(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "agent_failures", "log_block", "TEXT")
     _ensure_column(conn, "agent_failures", "root_cause", "TEXT")
 
+    # Only migrate data if old columns exist (e.g. workflow_name from a previous schema)
+    if not _has_column(conn, "agent_failures", "workflow_name"):
+        return
     conn.execute(
         """
         UPDATE agent_failures
