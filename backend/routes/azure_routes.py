@@ -154,40 +154,24 @@ def create_resources(body: CreateResourcesBody, token: str = Depends(get_current
             node_vm_size=body.node_vm_size,
             enable_monitoring=body.enable_monitoring,
         )
-        if body.repo_owner and body.repo_name:
-            app_db.set_deployment(
-                github_login=login,
-                repo_owner=body.repo_owner,
-                repo_name=body.repo_name,
-                resource_group=result["resource_group"],
-                region=result["region"],
-                acr_name=body.acr_name,
-                aks_name=result["aks_name"],
-                acr_login_server=result["acr_login_server"],
-                acr_username=result["acr_username"],
-                acr_password=result["acr_password"],
-                subscription_id=result["subscription_id"],
-                extra={
-                    "aks_fqdn": result.get("aks_fqdn"),
-                    "aks_api_ip": result.get("aks_api_ip"),
-                },
-            )
-        return result
     except Exception as e:
         err_msg = str(e)
-        if "AuthorizationFailed" in err_msg or "does not have authorization" in err_msg.lower():
-            raise HTTPException(
-                status_code=403,
-                detail=(
-                    "Your Azure credentials don't have permission to create resource groups. "
-                    "Re-create the service principal with subscription-level access: run "
-                    "'az login', then: az ad sp create-for-rbac --name github-actions-azure "
-                    "--role contributor --scopes /subscriptions/YOUR_SUBSCRIPTION_ID --sdk-auth "
-                    "(use the subscription ID from your current credentials, no resource group in scope). "
-                    "Paste the new JSON in Settings and try again."
-                ),
+
+        if "AlreadyInUse" in err_msg or "registry DNS name" in err_msg or "is already in use" in err_msg:
+            m = re.search(r"The registry DNS name\s*([a-z0-9-]+\.azurecr\.io)", err_msg, re.IGNORECASE)
+            suggestions = []
+            if m:
+                base = m.group(1).split(".")[0]
+                suggestions = [f"{base}{i}" for i in range(1, 4)]
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "detail": "ACR registry name is already in use. Choose a different acr_name (or try one of the suggestions).",
+                    "azure_error": err_msg,
+                    "suggested_names": suggestions,
+                },
             )
-        # VM size not allowed: return 400 with allowed_sizes (only 2/4 vCPU so we never suggest 16)
+
         if "not allowed in your subscription" in err_msg and "available VM sizes" in err_msg:
             m = re.search(r"The available VM sizes are\s*['\"]([^'\"]+)['\"]", err_msg)
             if m:
@@ -196,32 +180,53 @@ def create_resources(body: CreateResourcesBody, token: str = Depends(get_current
                 if allowed:
                     return JSONResponse(
                         status_code=400,
-                        content={
-                            "detail": err_msg,
-                            "allowed_sizes": allowed,
-                        },
+                        content={"detail": err_msg, "allowed_sizes": allowed},
                     )
-        # Subscription not registered for a resource provider (e.g. Microsoft.OperationsManagement for monitoring)
-        if "MissingSubscriptionRegistration" in err_msg or ("not registered to use namespace" in err_msg.lower() and "microsoft." in err_msg.lower()):
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "detail": "Your subscription is not registered for a required Azure resource provider. "
-                    "Create resources without monitoring (disable 'Enable monitoring' if shown), or register the provider: "
-                    "https://aka.ms/rps-not-found",
-                },
-            )
-        # Insufficient vCPU quota: suggest another region and only 2/4 vCPU sizes
+
         if "InsufficientVCPUQuota" in err_msg or ("insufficient" in err_msg.lower() and "vcpu" in err_msg.lower() and "quota" in err_msg.lower()):
             other_regions = [r for r in ["eastus2", "westus2", "westus", "centralus"] if r != body.region]
             small_sizes = list(azure_service.SMALL_VM_SIZES)
             return JSONResponse(
                 status_code=400,
                 content={
-                    "detail": "Insufficient vCPU quota in this region. Try a different region (quota is per region) or request a quota increase: https://learn.microsoft.com/en-us/azure/quotas/view-quotas. "
-                    + err_msg,
+                    "detail": "Insufficient vCPU quota in this region. Try a different region (quota is per region) or request a quota increase: https://learn.microsoft.com/en-us/azure/quotas/view-quotas. " + err_msg,
                     "suggested_sizes": small_sizes,
                     "suggested_regions": other_regions[:3],
                 },
             )
+
+        if "MissingSubscriptionRegistration" in err_msg or ("not registered to use namespace" in err_msg.lower() and "microsoft." in err_msg.lower()):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "detail": "Your subscription is not registered for a required Azure resource provider. Create resources without monitoring or register the provider: https://aka.ms/rps-not-found",
+                },
+            )
+
+        if "PropertyChangeNotAllowed" in err_msg and "properties.vmSize" in err_msg:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "detail": "AKS cluster already exists and node VM size cannot be changed in-place. Keep the existing size, create a new node pool, or create a new AKS cluster name.",
+                },
+            )
+
         raise HTTPException(status_code=500, detail=err_msg)
+
+    if body.repo_owner and body.repo_name:
+        app_db.set_deployment(
+            github_login=login,
+            repo_owner=body.repo_owner,
+            repo_name=body.repo_name,
+            resource_group=result.get("resource_group") or body.resource_group,
+            region=result.get("region") or body.region,
+            acr_name=body.acr_name,
+            aks_name=result.get("aks_name") or body.aks_name,
+            acr_login_server=result.get("acr_login_server", ""),
+            acr_username=result.get("acr_username", ""),
+            acr_password=result.get("acr_password", ""),
+            subscription_id=result.get("subscription_id", subscription_id),
+            extra=result,
+        )
+
+    return result

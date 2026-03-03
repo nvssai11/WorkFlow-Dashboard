@@ -7,6 +7,7 @@ import logging
 from typing import Any
 
 from azure.identity import ClientSecretCredential
+from azure.core.exceptions import ResourceNotFoundError
 from azure.mgmt.resource import ResourceManagementClient
 from azure.mgmt.containerregistry import ContainerRegistryManagementClient
 from azure.mgmt.containerservice import ContainerServiceClient
@@ -113,35 +114,43 @@ def create_resources(
                 logger.warning("Log Analytics creation failed: %s", e)
 
     # 2. ACR
-    acr_client.registries.begin_create(
-        resource_group,
-        acr_name,
-        {"location": region, "sku": {"name": "Basic"}, "admin_user_enabled": True},
-    ).result()
+    try:
+        acr_client.registries.get(resource_group, acr_name)
+    except ResourceNotFoundError:
+        acr_client.registries.begin_create(
+            resource_group,
+            acr_name,
+            {"location": region, "sku": {"name": "Basic"}, "admin_user_enabled": True},
+        ).result()
 
-    # 3. AKS (at least one system pool required by API)
-    pool = ManagedClusterAgentPoolProfile(
-        name="system",
-        count=node_count,
-        vm_size=node_vm_size,
-        max_pods=30,
-        mode="System",
-    )
-    cluster = ManagedCluster(
-        location=region,
-        agent_pool_profiles=[pool],
-        dns_prefix=(aks_name[:8] + "dns").replace("-", ""),
-        enable_rbac=False,
-        identity={"type": "SystemAssigned"},
-    )
-    # Do not attach Log Analytics addon during create — it requires Microsoft.OperationsManagement
-    # registration. Create AKS without monitoring so it always succeeds; user can enable in Portal later.
-    aks_client.managed_clusters.begin_create_or_update(
-        resource_group, aks_name, cluster
-    ).result()
+    # 3. AKS
+    # If cluster already exists, reuse it. Updating the system pool vm_size on an existing
+    # cluster fails with PropertyChangeNotAllowed, so only create on first run.
+    try:
+        aks_cluster = aks_client.managed_clusters.get(resource_group, aks_name)
+    except ResourceNotFoundError:
+        pool = ManagedClusterAgentPoolProfile(
+            name="system",
+            count=node_count,
+            vm_size=node_vm_size,
+            max_pods=30,
+            mode="System",
+        )
+        cluster = ManagedCluster(
+            location=region,
+            agent_pool_profiles=[pool],
+            dns_prefix=(aks_name[:8] + "dns").replace("-", ""),
+            enable_rbac=False,
+            identity={"type": "SystemAssigned"},
+        )
+        # Do not attach Log Analytics addon during create — it requires Microsoft.OperationsManagement
+        # registration. Create AKS without monitoring so it always succeeds; user can enable in Portal later.
+        aks_client.managed_clusters.begin_create_or_update(
+            resource_group, aks_name, cluster
+        ).result()
+        aks_cluster = aks_client.managed_clusters.get(resource_group, aks_name)
 
-    # 4. Get cluster details (FQDN for API / kubectl; resolve to public IP for display)
-    aks_cluster = aks_client.managed_clusters.get(resource_group, aks_name)
+    # 4. Cluster details (FQDN for API / kubectl; resolve to public IP for display)
     aks_fqdn = getattr(aks_cluster, "fqdn", None) or ""
     aks_api_ip = ""
     if aks_fqdn:

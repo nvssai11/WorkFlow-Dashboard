@@ -12,3 +12,4 @@ azure-mgmt-containerservice
 azure-mgmt-compute
 azure-mgmt-monitor
 azure-mgmt-loganalytics
+

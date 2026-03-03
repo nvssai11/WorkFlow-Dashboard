@@ -366,14 +366,18 @@ export default function RepositoryDetailsPage() {
         repo_owner: ownerLogin,
         repo_name: repo.name,
       });
-      setCreatedResult(data);
+      const created = data && typeof data === "object" ? data : null;
+      if (!created) {
+        throw new Error("Invalid create-resources response.");
+      }
+      setCreatedResult(created);
       setSecrets((s) => ({
         ...s,
-        ACR_LOGIN_SERVER: data.acr_login_server || s.ACR_LOGIN_SERVER,
-        ACR_USERNAME: data.acr_username || s.ACR_USERNAME,
-        ACR_PASSWORD: data.acr_password || s.ACR_PASSWORD,
-        AKS_RESOURCE_GROUP: data.resource_group || s.AKS_RESOURCE_GROUP,
-        AKS_CLUSTER_NAME: data.aks_name || s.AKS_CLUSTER_NAME,
+        ACR_LOGIN_SERVER: created.acr_login_server || s.ACR_LOGIN_SERVER,
+        ACR_USERNAME: created.acr_username || s.ACR_USERNAME,
+        ACR_PASSWORD: created.acr_password || s.ACR_PASSWORD,
+        AKS_RESOURCE_GROUP: created.resource_group || s.AKS_RESOURCE_GROUP,
+        AKS_CLUSTER_NAME: created.aks_name || s.AKS_CLUSTER_NAME,
       }));
     } catch (err: any) {
       const res = err.response?.data;

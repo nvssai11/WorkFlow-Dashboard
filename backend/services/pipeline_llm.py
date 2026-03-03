@@ -29,7 +29,10 @@ def _build_prompt(stack_info: dict, deployment_config: dict) -> str:
 
 CRITICAL: Do NOT use "if:" conditions with variables like has_frontend or has_backend. GitHub Actions only supports context (github, secrets, env, vars)—has_frontend and has_backend are NOT available. Instead, include ONLY the jobs and steps that apply to this repo. If the repo has only frontend, emit only frontend build/deploy steps; if only backend, only backend; if both, include both. Never reference has_frontend or has_backend in the YAML.
 
-1. CI job: ubuntu-latest, checkout, install deps, run tests. For JavaScript at repo root use "npm ci" or "npm install" and "npm run build" from repo root; for JavaScript in frontend/ use "cd frontend && npm ci" etc. Match dependency_file and layout.
+1. CI job: ubuntu-latest, checkout, install deps, run tests. For JavaScript, prefer lockfile-first install with fallback:
+   - repo root: "npm ci || npm install"
+   - frontend folder: "cd frontend && (npm ci || npm install)"
+   Then run build/tests from the correct layout path.
 2. CD job: needs CI, ubuntu-latest; Azure login (secrets.AZURE_CREDENTIALS); ACR login; build and push only the images that exist for this repo; get AKS credentials; apply namespace; create ACR pull secret with: kubectl create secret docker-registry acr-pull-secret --docker-server=${{ secrets.ACR_LOGIN_SERVER }} --docker-username=${{ secrets.ACR_USERNAME }} --docker-password=${{ secrets.ACR_PASSWORD }} -n workflow-dashboard --dry-run=client -o yaml | kubectl apply -f - (the pipe to kubectl apply makes it idempotent—succeeds when secret already exists); deployments must use imagePullSecrets: - name: acr-pull-secret; apply deployment manifests; then a "Diagnose deployment" step: kubectl get pods -n <namespace> -o wide, kubectl describe deployment <each> -n <namespace>, kubectl get events -n <namespace> --sort-by='.lastTimestamp' | tail -40 (logs will show ImagePullBackOff or CrashLoopBackOff cause); then "Wait for rollout" with kubectl rollout status --timeout=600s for each deployment; show services; then a step "Print public IP" that outputs LoadBalancer external IP(s) via kubectl get svc -n <namespace> -o jsonpath.
 3. Secrets: AZURE_CREDENTIALS, ACR_LOGIN_SERVER, ACR_USERNAME, ACR_PASSWORD, AKS_RESOURCE_GROUP, AKS_CLUSTER_NAME. Optional: BACKEND_PUBLIC_URL for frontend build-arg.
 4. Trigger: push to main, workflow_dispatch. Concurrency: cicd-${{{{ github.ref }}}}.
@@ -139,6 +142,17 @@ def _sanitize_generated_workflow(yaml_text: str) -> str:
     ]
     for old, new in replacements:
         yaml_text = yaml_text.replace(old, new)
+    # Make JS dependency install resilient when lockfile is out of sync.
+    yaml_text = re.sub(
+        r"cd frontend\s*&&\s*npm ci(?!\s*\|\|)",
+        "cd frontend && (npm ci || npm install)",
+        yaml_text,
+    )
+    yaml_text = re.sub(
+        r"(?<!\S)npm ci(?!\s*\|\|)",
+        "npm ci || npm install",
+        yaml_text,
+    )
     # Make secret create idempotent: add --dry-run=client -o yaml | kubectl apply -f - when missing
     if "acr-pull-secret" in yaml_text and "--dry-run=client" not in yaml_text:
         lines = yaml_text.split("\n")
