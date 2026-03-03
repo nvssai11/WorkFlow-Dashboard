@@ -775,6 +775,10 @@ export default function RepositoryDetailsPage() {
                   </button>
                   {showAdvancedSecrets && (
                     <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                      <p className="sm:col-span-2 text-[11px] text-muted-foreground">
+                        When "Enable CI/CD" runs with stored Azure enabled, saved deployment values for this repo
+                        (AKS resource group, AKS cluster, ACR) are used as canonical values to avoid mismatches.
+                      </p>
                       <input type="text" placeholder="ACR_LOGIN_SERVER" value={secrets.ACR_LOGIN_SERVER} onChange={(e) => setSecrets((s) => ({ ...s, ACR_LOGIN_SERVER: e.target.value }))} className="rounded-md border border-input px-2 py-1.5 text-xs" />
                       <input type="text" placeholder="ACR_USERNAME" value={secrets.ACR_USERNAME} onChange={(e) => setSecrets((s) => ({ ...s, ACR_USERNAME: e.target.value }))} className="rounded-md border border-input px-2 py-1.5 text-xs" />
                       <input type="password" placeholder="ACR_PASSWORD" value={secrets.ACR_PASSWORD} onChange={(e) => setSecrets((s) => ({ ...s, ACR_PASSWORD: e.target.value }))} className="rounded-md border border-input px-2 py-1.5 text-xs" />

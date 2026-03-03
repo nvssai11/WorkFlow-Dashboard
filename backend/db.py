@@ -12,6 +12,47 @@ from typing import Any, Optional
 _db_path: Optional[str] = None
 
 
+def _has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(row[1] == column for row in rows)
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    if _has_column(conn, table, column):
+        return
+    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
+def _ensure_agent_failures_schema(conn: sqlite3.Connection) -> None:
+    """
+    Backward-compatible migration for older agent_failures schema.
+    """
+    _ensure_column(conn, "agent_failures", "workflow", "TEXT")
+    _ensure_column(conn, "agent_failures", "source", "TEXT DEFAULT 'aks'")
+    _ensure_column(conn, "agent_failures", "pod_name", "TEXT")
+    _ensure_column(conn, "agent_failures", "timestamp", "TEXT")
+    _ensure_column(conn, "agent_failures", "error_line_number", "INTEGER")
+    _ensure_column(conn, "agent_failures", "error_line", "TEXT DEFAULT ''")
+    _ensure_column(conn, "agent_failures", "matched_keyword", "TEXT DEFAULT ''")
+    _ensure_column(conn, "agent_failures", "log_block", "TEXT")
+    _ensure_column(conn, "agent_failures", "root_cause", "TEXT")
+
+    conn.execute(
+        """
+        UPDATE agent_failures
+        SET
+            workflow = COALESCE(workflow, workflow_name),
+            timestamp = COALESCE(timestamp, log_timestamp),
+            error_line_number = COALESCE(error_line_number, line_number),
+            log_block = COALESCE(log_block, error_block),
+            root_cause = COALESCE(root_cause, estimated_root_cause),
+            source = COALESCE(source, 'aks'),
+            error_line = COALESCE(error_line, ''),
+            matched_keyword = COALESCE(matched_keyword, '')
+        """
+    )
+
+
 def _get_db_path() -> str:
     global _db_path
     if _db_path is not None:
@@ -86,6 +127,29 @@ def _get_connection() -> sqlite3.Connection:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS agent_failures (
+            id TEXT PRIMARY KEY,
+            github_login TEXT NOT NULL,
+            workflow TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'aks',
+            pod_name TEXT,
+            timestamp TEXT,
+            error_line_number INTEGER NOT NULL,
+            error_line TEXT NOT NULL,
+            matched_keyword TEXT NOT NULL,
+            log_block TEXT NOT NULL,
+            root_cause TEXT,
+            fix_suggestion TEXT,
+            urgency TEXT NOT NULL DEFAULT 'moderate',
+            resolved INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    _ensure_agent_failures_schema(conn)
     conn.commit()
     return conn
 
@@ -343,5 +407,141 @@ def set_deployment(
             ),
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def insert_agent_failure(
+    *,
+    github_login: str,
+    workflow: str,
+    source: str,
+    pod_name: Optional[str],
+    timestamp: Optional[str],
+    error_line_number: int,
+    error_line: str,
+    matched_keyword: str,
+    log_block: str,
+    root_cause: Optional[str] = None,
+    fix_suggestion: Optional[str] = None,
+    urgency: str = "moderate",
+) -> str:
+    conn = _get_connection()
+    try:
+        now = datetime.datetime.utcnow().isoformat() + "Z"
+        failure_id = f"fail_{datetime.datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}"
+        conn.execute(
+            """
+            INSERT INTO agent_failures (
+                id, github_login, workflow, source, pod_name, timestamp, error_line_number,
+                error_line, matched_keyword, log_block, root_cause, fix_suggestion, urgency,
+                resolved, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+            """,
+            (
+                failure_id,
+                github_login,
+                workflow,
+                source,
+                pod_name,
+                timestamp,
+                error_line_number,
+                error_line,
+                matched_keyword,
+                log_block,
+                root_cause,
+                fix_suggestion,
+                urgency,
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+        return failure_id
+    finally:
+        conn.close()
+
+
+def list_agent_failures(
+    github_login: str,
+    *,
+    status: str = "all",
+    search: Optional[str] = None,
+    recent_seconds: Optional[int] = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    conn = _get_connection()
+    try:
+        clauses = ["github_login = ?"]
+        params: list[Any] = [github_login]
+
+        if status == "resolved":
+            clauses.append("resolved = 1")
+        elif status == "unresolved":
+            clauses.append("resolved = 0")
+
+        if search:
+            clauses.append("LOWER(workflow) LIKE ?")
+            params.append(f"%{search.lower()}%")
+
+        if recent_seconds is not None and recent_seconds > 0:
+            cutoff = (datetime.datetime.utcnow() - datetime.timedelta(seconds=recent_seconds)).isoformat() + "Z"
+            clauses.append("COALESCE(timestamp, created_at) >= ?")
+            params.append(cutoff)
+
+        params.append(max(1, min(limit, 500)))
+        where_sql = " AND ".join(clauses)
+        rows = conn.execute(
+            f"""
+            SELECT
+                id, workflow, source, pod_name, timestamp, error_line_number, error_line,
+                matched_keyword, log_block, root_cause, fix_suggestion, urgency, resolved,
+                created_at, updated_at
+            FROM agent_failures
+            WHERE {where_sql}
+            ORDER BY resolved ASC, COALESCE(timestamp, created_at) DESC
+            LIMIT ?
+            """,
+            tuple(params),
+        ).fetchall()
+
+        return [
+            {
+                "id": row[0],
+                "workflow": row[1],
+                "source": row[2],
+                "podName": row[3],
+                "timestamp": row[4],
+                "errorLineNumber": row[5],
+                "errorLine": row[6],
+                "matchedKeyword": row[7],
+                "logBlock": row[8],
+                "rootCause": row[9],
+                "fixSuggestion": row[10],
+                "urgency": row[11],
+                "resolved": bool(row[12]),
+                "createdAt": row[13],
+                "updatedAt": row[14],
+            }
+            for row in rows
+        ]
+    finally:
+        conn.close()
+
+
+def set_agent_failure_resolved(github_login: str, failure_id: str, resolved: bool) -> bool:
+    conn = _get_connection()
+    try:
+        now = datetime.datetime.utcnow().isoformat() + "Z"
+        cursor = conn.execute(
+            """
+            UPDATE agent_failures
+            SET resolved = ?, updated_at = ?
+            WHERE github_login = ? AND id = ?
+            """,
+            (1 if resolved else 0, now, github_login, failure_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
     finally:
         conn.close()

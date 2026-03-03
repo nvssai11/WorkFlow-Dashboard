@@ -110,6 +110,10 @@ def _cd_steps(stack_info: dict) -> list:
         })
     steps.extend([
         {
+            "name": "Validate AKS target",
+            "run": "echo \"AKS target: ${{ secrets.AKS_CLUSTER_NAME }} (RG: ${{ secrets.AKS_RESOURCE_GROUP }})\" && az aks show --resource-group ${{ secrets.AKS_RESOURCE_GROUP }} --name ${{ secrets.AKS_CLUSTER_NAME }} --query \"{name:name,resourceGroup:resourceGroup,fqdn:fqdn}\" -o table",
+        },
+        {
             "name": "Install kubectl",
             "run": "curl -sSL \"https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl\" -o kubectl && chmod +x kubectl && sudo mv kubectl /usr/local/bin/",
         },

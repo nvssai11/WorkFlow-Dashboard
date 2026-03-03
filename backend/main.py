@@ -1,8 +1,9 @@
 from fastapi import FastAPI
 
-from backend.routes import oauth_routes, workflow_routes, github_routes, pipeline_routes, azure_routes
+from backend.routes import oauth_routes, workflow_routes, github_routes, pipeline_routes, azure_routes, agents_routes
 from fastapi.middleware.cors import CORSMiddleware
 from backend.config import settings
+from backend.services.aks_polling_worker import aks_failure_worker
 
 app = FastAPI(
     title="GitHub Workflow Automator",
@@ -21,3 +22,14 @@ app.include_router(workflow_routes.router, prefix="/workflow", tags=["Workflow"]
 app.include_router(github_routes.router, prefix="/github", tags=["GitHub"])
 app.include_router(pipeline_routes.router, prefix="/pipeline", tags=["Pipeline"])
 app.include_router(azure_routes.router, prefix="/azure", tags=["Azure"])
+app.include_router(agents_routes.router, prefix="/agents", tags=["Agents"])
+
+
+@app.on_event("startup")
+def _startup_agents_monitor() -> None:
+    aks_failure_worker.start()
+
+
+@app.on_event("shutdown")
+def _shutdown_agents_monitor() -> None:
+    aks_failure_worker.stop()

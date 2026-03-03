@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     # Azure OpenAI–compatible endpoint for CI/CD pipeline generation (e.g. DeepSeek on Azure)
     AZURE_OPENAI_CHAT_URL: str = "https://dskit-mm7qk81m-eastus2.cognitiveservices.azure.com/openai/v1/chat/completions"
     AZURE_OPENAI_API_KEY: str = ""  # Set in .env for AI-generated pipelines
+    AKS_MONITOR_ENABLED: bool = False
+    AKS_MONITOR_POLL_SECONDS: int = 20
+    AKS_MONITOR_SOURCES: str = "workflow-frontend"
+    AKS_MONITOR_DEDUP_SECONDS: int = 300
+    AGENT_DEFAULT_GITHUB_LOGIN: str = "system"
 
     class Config:
         env_file = ".env"
