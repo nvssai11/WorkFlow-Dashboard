@@ -12,7 +12,7 @@ from backend import db as app_db
 from backend.config import settings
 from backend.services.aks_log_monitor import fetch_error_region, reader
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
 
 
 @dataclass
@@ -70,6 +70,7 @@ class AKSFailurePollingWorker:
             return self._running
 
     def status(self) -> dict[str, object]:
+        raw_preview_limit = 50
         return {
             "running": self.is_running(),
             "enabled": bool(settings.AKS_MONITOR_ENABLED),
@@ -81,6 +82,7 @@ class AKSFailurePollingWorker:
             "kubectlReachable": self._kubectl_reachable,
             "lastResult": self._last_result,
             "rawLogEntries": len(self._raw_log_buffer),
+            "rawLogsPreview": self._raw_log_buffer[-raw_preview_limit:],
         }
 
     def get_raw_logs(self, limit: int = 500) -> list[dict[str, object]]:
@@ -183,6 +185,22 @@ class AKSFailurePollingWorker:
             cmd.extend(["-c", source.container])
         return cmd
 
+    def _build_kubectl_tail_cmd(self, source: AKSLogSource, tail_lines: int = 50) -> list[str]:
+        cmd = [
+            "kubectl",
+            "logs",
+            "-n",
+            source.namespace,
+            "-l",
+            source.selector,
+            f"--tail={max(1, tail_lines)}",
+            "--all-containers=true",
+            "--prefix",
+        ]
+        if source.container:
+            cmd.extend(["-c", source.container])
+        return cmd
+
     def _should_skip_duplicate(self, dedup_key: str) -> bool:
         now = time.time()
         dedup_seconds = int(max(30, settings.AKS_MONITOR_DEDUP_SECONDS))
@@ -213,6 +231,7 @@ class AKSFailurePollingWorker:
         github_login = settings.AGENT_DEFAULT_GITHUB_LOGIN or "system"
         had_connectivity_failure = False
         last_connectivity_error: Optional[str] = None
+        logger.info("AKS poll started: sources=%s since=%ss", len(sources), since_seconds)
 
         for source in sources:
             cmd = self._build_kubectl_cmd(source, since_seconds)
@@ -246,8 +265,41 @@ class AKSFailurePollingWorker:
 
             lines = [line for line in (result.stdout or "").splitlines() if line.strip()]
             if not lines:
+                # Fallback for low-traffic pods: fetch recent tail for UI reference.
+                tail_cmd = self._build_kubectl_tail_cmd(source, tail_lines=50)
+                try:
+                    tail_result = subprocess.run(tail_cmd, capture_output=True, text=True, timeout=40, check=False)
+                    if tail_result.returncode == 0:
+                        lines = [line for line in (tail_result.stdout or "").splitlines() if line.strip()]
+                    else:
+                        tail_err = (tail_result.stderr or "").strip()
+                        if tail_err:
+                            logger.info(
+                                "AKS poll source=%s ns=%s selector=%s fallback-tail failed: %s",
+                                source.workflow,
+                                source.namespace,
+                                source.selector,
+                                tail_err,
+                            )
+                except Exception:
+                    pass
+
+            if not lines:
+                logger.info(
+                    "AKS poll source=%s ns=%s selector=%s lines=0",
+                    source.workflow,
+                    source.namespace,
+                    source.selector,
+                )
                 continue
             self._append_raw_logs(source, lines)
+            logger.info(
+                "AKS poll source=%s ns=%s selector=%s lines=%s",
+                source.workflow,
+                source.namespace,
+                source.selector,
+                len(lines),
+            )
 
             detections = reader(lines, max_detections=50)
             total_detected += len(detections)
@@ -284,6 +336,12 @@ class AKSFailurePollingWorker:
                 total_stored += 1
 
         out = {"detected": total_detected, "stored": total_stored}
+        logger.info(
+            "AKS poll completed: detected=%s stored=%s raw_buffer=%s",
+            total_detected,
+            total_stored,
+            len(self._raw_log_buffer),
+        )
         if had_connectivity_failure and total_detected == 0 and total_stored == 0:
             self._set_poll_health(
                 error=last_connectivity_error,
