@@ -27,7 +27,8 @@ app.include_router(agents_routes.router, prefix="/agents", tags=["Agents"])
 
 @app.on_event("startup")
 def _startup_agents_monitor() -> None:
-    aks_failure_worker.start()
+    # Monitor is not auto-started; user enables it via Agents page (Start). Stays off until Start is clicked.
+    pass
 
 
 @app.on_event("shutdown")
