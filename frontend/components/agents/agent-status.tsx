@@ -149,10 +149,6 @@ export function AgentStatus() {
                             Refresh
                         </button>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-3">
-                        <strong>Poll Once:</strong> Run one AKS log poll and detection now (no background loop).{" "}
-                        <strong>Refresh:</strong> Reload this status card from the server.
-                    </p>
                     <p className="text-xs text-muted-foreground mt-2 text-emerald-500 flex items-center gap-1">
                         <CheckCircle size={12} />
                         {isLoading ? "Refreshing status..." : "Status updates every 10s"}

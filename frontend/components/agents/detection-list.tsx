@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, RefreshCcw } from "lucide-react";
+import { AlertTriangle, CheckCircle2, RefreshCcw, FileText, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -38,6 +38,18 @@ function formatTime(value?: string | null): string {
     return date.toLocaleString();
 }
 
+/** Dummy text until AI root cause is implemented */
+function getDisplayRootCause(item: FailureItem): string {
+    if (item.rootCause?.trim()) return item.rootCause;
+    return "Possible timeout or resource constraint (dummy)";
+}
+
+/** Dummy text until AI fix suggestion is implemented */
+function getDisplayFix(item: FailureItem): string {
+    if (item.fixSuggestion?.trim()) return item.fixSuggestion;
+    return "Check resource limits or retry (dummy)";
+}
+
 export function DetectionList() {
     const [items, setItems] = useState<FailureItem[]>([]);
     const [search, setSearch] = useState("");
@@ -45,6 +57,7 @@ export function DetectionList() {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [rawLogs, setRawLogs] = useState<RawLogItem[]>([]);
+    const [logsDrawerItem, setLogsDrawerItem] = useState<FailureItem | null>(null);
 
     const loadItems = useCallback(async () => {
         setIsLoading(true);
@@ -85,6 +98,13 @@ export function DetectionList() {
         return () => clearInterval(intervalId);
     }, [loadItems]);
 
+    const sortedItems = useMemo(() => {
+        return [...items].sort((a, b) => {
+            if (a.resolved === b.resolved) return 0;
+            return a.resolved ? 1 : -1;
+        });
+    }, [items]);
+
     const unresolvedCount = useMemo(() => items.filter((item) => !item.resolved).length, [items]);
 
     const onToggleResolved = async (id: string, resolved: boolean) => {
@@ -95,6 +115,11 @@ export function DetectionList() {
             setError("Failed to update status");
         }
     };
+
+    const rawLogsForWorkflow = useMemo(() => {
+        if (!logsDrawerItem) return [];
+        return rawLogs.filter((entry) => entry.workflow === logsDrawerItem.workflow);
+    }, [rawLogs, logsDrawerItem]);
 
     return (
         <div className="space-y-4">
@@ -130,7 +155,11 @@ export function DetectionList() {
                 </div>
             </div>
 
-            {error && <div className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-500">{error}</div>}
+            {error && (
+                <div className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-500">
+                    {error}
+                </div>
+            )}
 
             {isLoading && <div className="text-sm text-muted-foreground">Loading incidents...</div>}
 
@@ -140,75 +169,135 @@ export function DetectionList() {
                 </div>
             )}
 
-            <div className="grid gap-4">
-                {items.map((item) => (
-                    <div key={item.id} className="rounded-xl border bg-card p-5 space-y-3">
-                        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                            <div className="flex items-center gap-2">
-                                <span className="font-semibold">{item.workflow}</span>
-                                <span className="text-muted-foreground text-sm">{formatTime(item.timestamp)}</span>
-                            </div>
-                            <span
-                                className={cn(
-                                    "text-xs px-2 py-1 rounded-full border font-medium uppercase w-fit",
-                                    item.urgency === "crucial" && "bg-rose-500/10 text-rose-500 border-rose-500/20",
-                                    item.urgency === "moderate" && "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
-                                    item.urgency === "low" && "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
-                                )}
-                            >
-                                {item.urgency}
-                            </span>
-                        </div>
-
-                        <div className="flex items-start gap-2 text-rose-500 text-sm font-medium">
-                            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-                            <span>
-                                line {item.errorLineNumber}: {item.errorLine}
-                            </span>
-                        </div>
-
-                        <div className="grid gap-2 text-sm">
-                            <p><span className="font-medium">Root cause:</span> {item.rootCause || "Pending AI analysis"}</p>
-                            <p><span className="font-medium">Fix suggestion:</span> {item.fixSuggestion || "Pending AI analysis"}</p>
-                            <p className="text-muted-foreground">
-                                Source: {item.source}
-                                {item.podName ? ` | Pod: ${item.podName}` : ""}
-                                {item.matchedKeyword ? ` | Keyword: ${item.matchedKeyword}` : ""}
-                            </p>
-                        </div>
-
-                        <details className="rounded-md border bg-muted/30 p-3">
-                            <summary className="cursor-pointer text-sm font-medium">View log snippet</summary>
-                            <pre className="mt-2 whitespace-pre-wrap text-xs text-muted-foreground">{item.logBlock}</pre>
-                        </details>
-
-                        <label className="inline-flex items-center gap-2 text-sm">
-                            <input
-                                type="checkbox"
-                                checked={item.resolved}
-                                onChange={(e) => onToggleResolved(item.id, e.target.checked)}
-                            />
-                            <span className="inline-flex items-center gap-1">
-                                <CheckCircle2 size={14} />
-                                Mark as resolved
-                            </span>
-                        </label>
+            {!isLoading && items.length > 0 && (
+                <div className="rounded-xl border bg-card overflow-hidden">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="border-b bg-muted/50">
+                                    <th className="text-left font-semibold p-3">Workflow name</th>
+                                    <th className="text-left font-semibold p-3">Failure details</th>
+                                    <th className="text-left font-semibold p-3">Estimated root cause</th>
+                                    <th className="text-left font-semibold p-3">Suggested fix</th>
+                                    <th className="text-left font-semibold p-3 w-[100px]">View logs</th>
+                                    <th className="text-left font-semibold p-3 w-[100px]">Resolved</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {sortedItems.map((item) => (
+                                    <tr
+                                        key={item.id}
+                                        className={cn(
+                                            "border-b last:border-b-0",
+                                            item.resolved && "bg-muted/20"
+                                        )}
+                                    >
+                                        <td className="p-3 font-medium">{item.workflow}</td>
+                                        <td className="p-3">
+                                            <span className="text-rose-500 inline-flex items-start gap-1">
+                                                <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                                                <span>
+                                                    Line {item.errorLineNumber}: {item.errorLine}
+                                                </span>
+                                            </span>
+                                            {item.timestamp && (
+                                                <p className="text-xs text-muted-foreground mt-1">
+                                                    {formatTime(item.timestamp)}
+                                                </p>
+                                            )}
+                                        </td>
+                                        <td className="p-3 text-muted-foreground max-w-[200px]">
+                                            {getDisplayRootCause(item)}
+                                        </td>
+                                        <td className="p-3 text-muted-foreground max-w-[200px]">
+                                            {getDisplayFix(item)}
+                                        </td>
+                                        <td className="p-3">
+                                            <button
+                                                type="button"
+                                                onClick={() => setLogsDrawerItem(item)}
+                                                className="inline-flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs hover:bg-accent"
+                                            >
+                                                <FileText size={12} />
+                                                View logs
+                                            </button>
+                                        </td>
+                                        <td className="p-3">
+                                            <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={item.resolved}
+                                                    onChange={(e) =>
+                                                        onToggleResolved(item.id, e.target.checked)
+                                                    }
+                                                />
+                                                <span className="text-xs">
+                                                    {item.resolved ? "Resolved" : "Resolve"}
+                                                </span>
+                                            </label>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
-                ))}
-            </div>
-
-            <details className="rounded-xl border bg-card p-4">
-                <summary className="cursor-pointer font-medium text-sm">Raw AKS Logs (reference)</summary>
-                <div className="mt-3 rounded-md border bg-muted/30 p-3 max-h-[320px] overflow-auto">
-                    {rawLogs.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">No raw logs fetched yet.</p>
-                    ) : (
-                        <pre className="whitespace-pre-wrap text-xs text-muted-foreground">
-                            {rawLogs.map((entry) => `[${formatTime(entry.timestamp)}] [${entry.workflow}] [${entry.namespace}/${entry.selector}] ${entry.line}`).join("\n")}
-                        </pre>
-                    )}
                 </div>
-            </details>
+            )}
+
+            {/* Logs drawer */}
+            {logsDrawerItem && (
+                <>
+                    <div
+                        className="fixed inset-0 z-40 bg-black/50"
+                        aria-hidden
+                        onClick={() => setLogsDrawerItem(null)}
+                    />
+                    <div className="fixed top-0 right-0 bottom-0 z-50 w-full max-w-lg bg-background border-l shadow-xl flex flex-col">
+                        <div className="flex items-center justify-between border-b p-3">
+                            <h4 className="font-semibold">Logs — {logsDrawerItem.workflow}</h4>
+                            <button
+                                type="button"
+                                onClick={() => setLogsDrawerItem(null)}
+                                className="rounded-md p-1.5 hover:bg-accent"
+                                aria-label="Close"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-auto p-3 space-y-4">
+                            <div>
+                                <p className="text-xs font-medium text-muted-foreground mb-2">
+                                    Log snippet (matched block)
+                                </p>
+                                <pre className="rounded-md border bg-muted/30 p-3 whitespace-pre-wrap text-xs overflow-x-auto">
+                                    {logsDrawerItem.logBlock || "No snippet."}
+                                </pre>
+                            </div>
+                            <div>
+                                <p className="text-xs font-medium text-muted-foreground mb-2">
+                                    Raw AKS logs for this workflow
+                                </p>
+                                <div className="rounded-md border bg-muted/30 p-3 max-h-[50vh] overflow-auto">
+                                    {rawLogsForWorkflow.length === 0 ? (
+                                        <p className="text-xs text-muted-foreground">
+                                            No raw logs for this workflow yet.
+                                        </p>
+                                    ) : (
+                                        <pre className="whitespace-pre-wrap text-xs text-muted-foreground">
+                                            {rawLogsForWorkflow
+                                                .map(
+                                                    (entry) =>
+                                                        `[${formatTime(entry.timestamp)}] [${entry.workflow}] [${entry.namespace}/${entry.selector}] ${entry.line}`
+                                                )
+                                                .join("\n")}
+                                        </pre>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </>
+            )}
         </div>
     );
 }
