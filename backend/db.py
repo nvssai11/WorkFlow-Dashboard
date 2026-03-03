@@ -557,3 +557,26 @@ def set_agent_failure_resolved(github_login: str, failure_id: str, resolved: boo
         return cursor.rowcount > 0
     finally:
         conn.close()
+
+
+def update_agent_failure_analysis(
+    github_login: str,
+    failure_id: str,
+    root_cause: Optional[str],
+    fix_suggestion: Optional[str],
+) -> bool:
+    conn = _get_connection()
+    try:
+        now = datetime.datetime.utcnow().isoformat() + "Z"
+        cursor = conn.execute(
+            """
+            UPDATE agent_failures
+            SET root_cause = ?, fix_suggestion = ?, updated_at = ?
+            WHERE github_login = ? AND id = ?
+            """,
+            (root_cause, fix_suggestion, now, github_login, failure_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
